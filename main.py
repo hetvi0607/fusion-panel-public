@@ -8,7 +8,9 @@ This script orchestrates the entire process:
 4. Sends an email with the report attached
 
 Usage:
+    python main.py [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD]
     python main.py [--month YYYY-MM] [--repos repo1,repo2]
+    python main.py  # Interactive mode - prompts for date range
 """
 import os
 import sys
@@ -44,6 +46,10 @@ def parse_arguments():
     # Optional month specification
     parser.add_argument('--month', type=str, help='Month to process in YYYY-MM format')
     
+    # Optional date range specification
+    parser.add_argument('--start-date', type=str, help='Start date in YYYY-MM-DD format')
+    parser.add_argument('--end-date', type=str, help='End date in YYYY-MM-DD format')
+    
     # Optional repository list
     parser.add_argument('--repos', type=str, help='Comma-separated list of repositories (org/repo)')
     
@@ -56,6 +62,36 @@ def parse_arguments():
     parser.add_argument('--verbose', action='store_true', help='Show verbose output')
     
     return parser.parse_args()
+
+
+def prompt_for_date_range() -> Tuple[str, str]:
+    """Prompt user for date range interactively.
+    
+    Returns:
+        Tuple of (start_date, end_date) in YYYY-MM-DD format
+    """
+    print("\nEnter date range for commit tracking:")
+    
+    while True:
+        start_date_str = input("Start date (YYYY-MM-DD): ").strip()
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            break
+        except ValueError:
+            print("Invalid date format. Please use YYYY-MM-DD (e.g., 2024-01-01)")
+    
+    while True:
+        end_date_str = input("End date (YYYY-MM-DD): ").strip()
+        try:
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            if end_date < start_date:
+                print("End date cannot be before start date. Please try again.")
+                continue
+            break
+        except ValueError:
+            print("Invalid date format. Please use YYYY-MM-DD (e.g., 2024-01-31)")
+    
+    return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
 
 
 def get_date_range_for_month(month_str: Optional[str] = None) -> Tuple[str, str]:
@@ -87,6 +123,43 @@ def get_date_range_for_month(month_str: Optional[str] = None) -> Tuple[str, str]
         end_date = now
     
     return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
+
+
+def get_date_range(start_date_arg: Optional[str] = None, 
+                   end_date_arg: Optional[str] = None,
+                   month_arg: Optional[str] = None) -> Tuple[str, str]:
+    """Get date range from arguments or prompt user.
+    
+    Args:
+        start_date_arg: Start date in YYYY-MM-DD format
+        end_date_arg: End date in YYYY-MM-DD format
+        month_arg: Month in YYYY-MM format
+        
+    Returns:
+        Tuple of (start_date, end_date) in YYYY-MM-DD format
+    """
+    # Priority 1: Explicit date range
+    if start_date_arg and end_date_arg:
+        try:
+            start_date = datetime.strptime(start_date_arg, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_arg, '%Y-%m-%d')
+            
+            if end_date < start_date:
+                logger.error("End date cannot be before start date")
+                sys.exit(1)
+            
+            return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
+        except ValueError as e:
+            logger.error(f"Invalid date format: {str(e)}")
+            sys.exit(1)
+    
+    # Priority 2: Month specification
+    elif month_arg:
+        return get_date_range_for_month(month_arg)
+    
+    # Priority 3: Prompt user for date range
+    else:
+        return prompt_for_date_range()
 
 
 def get_repositories(repo_arg: Optional[str] = None) -> List[str]:
@@ -168,8 +241,8 @@ def main():
     logger.info("Starting GitHub Commit Tracking Automation")
     
     try:
-        # Get date range for the month
-        start_date, end_date = get_date_range_for_month(args.month)
+        # Get date range
+        start_date, end_date = get_date_range(args.start_date, args.end_date, args.month)
         
         # Get the list of repositories
         repositories = get_repositories(args.repos)
