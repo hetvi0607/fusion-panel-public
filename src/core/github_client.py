@@ -11,7 +11,7 @@ import requests
 from requests.exceptions import RequestException
 from dateutil import parser
 
-from config import app_config
+from src.core.config import app_config
 
 # Configure logger
 logging.basicConfig(
@@ -149,6 +149,7 @@ class GitHubClient:
                         "date_time": date_time,
                         "username": username,
                         "repo_name": repo_name,
+                        "branch": branch if branch else "default",
                         "_commit_obj": sha  # Store just the SHA for further processing
                     }
                     

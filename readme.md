@@ -1,424 +1,306 @@
-# GitHub Commit Tracking Automation - Requirements Document
+# GitHub Commit Tracking Automation
 
-## 1. Project Overview
+An automated system for collecting, analyzing, and reporting GitHub commits across multiple repositories with AI-powered analysis.
 
-**Purpose**: Automate the monthly collection and reporting of GitHub commits across specified repositories.
+## Features
 
-**Current Process**: Manual review of GitHub repositories, data extraction, Google Sheets creation, and email distribution.
+✨ **Automated Data Collection** - Fetch commits from multiple GitHub repositories  
+🤖 **AI-Powered Analysis** - Claude AI generates human-readable summaries  
+📊 **Report Generation** - Creates detailed CSV reports and AI summaries  
+💬 **WhatsApp Integration** - Send reports to WhatsApp Business groups  
+📧 **Email Notifications** - Automated email delivery (optional)  
+🗄️ **Repository Management** - Database-backed repository configuration
 
-**Desired Outcome**: Fully automated monthly report generation and delivery.
+## Quick Start
 
-## 2. Functional Requirements
+### Prerequisites
 
-### 2.1 Data Collection
-- **Source**: GitHub repositories (public/private as specified)
-- **Repositories to Monitor**: 
-  - Repository X: `[organization/repo-name-x]`
-  - Repository Y: `[organization/repo-name-y]`
-  - Repository Z: `[organization/repo-name-z]`
-  - *Note: Replace with actual repository URLs/names*
-- **Data Scope**: All commits within the specified month
-- **Default Behavior**: Current month's commits (if run mid-month or at month-end)
-- **Flexible Date Range**: Ability to specify custom month/year when needed
+- Python 3.8+
+- GitHub Personal Access Token
+- Claude API key (Anthropic)
 
-### 2.2 Data Points to Capture
-For each commit, collect:
-1. **Serial Number**: Sequential numbering (1, 2, 3...)
-2. **Commit Hash**: Full SHA hash
-3. **Commit URL**: Direct link to the commit on GitHub
-4. **Commit Message**: Full commit message text
-5. **Date & Time**: Commit timestamp (formatted as YYYY-MM-DD HH:MM:SS)
-6. **Username**: GitHub username of the committer
-7. **Repository Name**: Name of the repository
-8. **AI Summary**: Claude-generated summary of code changes (see Section 2.7)
-9. **Change Type**: AI-categorized type of change (Feature, Bug Fix, Refactor, etc.)
+### Installation
 
-### 2.3 Output Generation
-- **Format**: Google Sheets spreadsheet
-- **Sheet Name**: "GitHub Commits - [Month Year]" (e.g., "GitHub Commits - March 2024")
-- **Column Headers**:
-  - Column A: No.
-  - Column B: Commit Hash
-  - Column C: URL
-  - Column D: Commit Message
-  - Column E: Date Time
-  - Column F: Username
-  - Column G: Repo Name
-  - Column H: AI Summary
-  - Column I: Change Type
+```bash
+# Clone the repository
+git clone <repository-url>
+cd task-sheet-automation
 
-### 2.4 Data Organization
-- **Sorting**: Chronological order (oldest to newest)
-- **Grouping**: Optional grouping by repository with clear visual separation
-- **Formatting**: Professional appearance with header row formatting
+# Install dependencies
+pip install -r requirements.txt
 
-### 2.5 Delivery
-- **Method**: Email with Google Sheets attachment or shareable link
-- **Recipient**: recipient@example.com
-- **Subject Line**: "Monthly GitHub Commit Report with AI Analysis - [Month Year]"
-- **Email Body**: Brief summary including:
-  - Total number of commits
-  - Number of repositories processed
-  - Date range covered
-  - AI analysis statistics (commits processed, categorization breakdown)
-  - Any notable observations or issues
-
-### 2.6 Data Organization
-- **Sorting**: Chronological order (oldest to newest)
-- **Grouping**: Optional grouping by repository with clear visual separation
-- **Formatting**: Professional appearance with header row formatting
-- **AI Summary Formatting**: Proper text wrapping and cell sizing for readability
-
-### 2.7 AI-Powered Code Analysis Feature
-
-#### 2.7.1 Integration Overview
-- **AI Service**: Claude API integration for intelligent commit analysis
-- **Purpose**: Provide human-readable summaries of technical code changes
-- **Scope**: Process all commits captured in the monthly report
-
-#### 2.7.2 Code Diff Analysis
-- **Data Source**: GitHub API commit diff data
-- **Supported File Types**: 
-  - Programming languages (.js, .py, .java, .go, .php, .rb, .cs, etc.)
-  - Configuration files (.json, .yaml, .xml, .env, etc.)
-  - Documentation files (.md, .txt, .rst, etc.)
-  - Database scripts (.sql)
-- **Diff Processing**: Extract added, modified, and deleted lines for analysis
-
-#### 2.7.3 AI Summary Generation
-- **Summary Length**: 50-150 words per commit
-- **Summary Content**: Should include:
-  - **What was changed**: Brief description of modified components
-  - **Why it was changed**: Inferred purpose based on code patterns
-  - **Impact assessment**: Potential effects on functionality
-  - **Technical details**: Key methods/functions/classes affected
-
-**Example AI Summary Format**:
-```
-"Modified user authentication system by adding two-factor authentication support. Updated login controller to include SMS verification step and added new database table for storing verification codes. Enhanced security middleware to validate 2FA tokens. This change improves account security but may require users to update their login process."
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your credentials
 ```
 
-#### 2.7.4 Change Categorization
-AI should categorize each commit into one of these types:
-- **Feature**: New functionality or capability
-- **Bug Fix**: Correcting existing issues
-- **Refactor**: Code restructuring without changing functionality
-- **Performance**: Optimization improvements
-- **Security**: Security-related changes
-- **Documentation**: Documentation updates
-- **Configuration**: Config/setup changes
-- **Dependencies**: Library or package updates
-- **Database**: Database schema or migration changes
-- **UI/UX**: User interface improvements
-- **Test**: Testing-related changes
-- **Build/Deploy**: Build system or deployment changes
-- **Other**: Miscellaneous changes
+### Basic Usage
 
-#### 2.7.5 AI Processing Workflow
-1. **Fetch Commit Data**: Retrieve commit details and diff from GitHub API
-2. **Code Diff Extraction**: Parse file changes and extract meaningful code segments
-3. **Context Preparation**: Prepare code context for Claude API
-4. **AI Analysis Request**: Send structured prompt to Claude API
-5. **Response Processing**: Parse AI response for summary and categorization
-6. **Quality Validation**: Ensure response meets format requirements
-7. **Data Integration**: Combine AI insights with commit metadata
+**Note**: This project requires Python 3.8+. Use `python3` command:
 
-#### 2.7.6 Claude API Integration Specifications
-- **API Endpoint**: Anthropic Claude API (latest available model)
-- **Model Recommendation**: Claude Sonnet 4 for balance of speed and quality
-- **Request Format**: Structured prompts with code diff context
-- **Rate Limiting**: Implement proper rate limiting (max 50 requests/minute)
-- **Retry Logic**: Handle API failures with exponential backoff
-- **Cost Management**: Token usage monitoring and optimization
+```bash
+# Generate report for current month
+python3 main.py
 
-#### 2.7.7 AI Prompt Template
-```
-Analyze this GitHub commit and provide:
-1. A concise summary (50-150 words) of what was changed and why
-2. Categorize the change type from: [Feature, Bug Fix, Refactor, Performance, Security, Documentation, Configuration, Dependencies, Database, UI/UX, Test, Build/Deploy, Other]
+# Specify custom month
+python3 main.py --month 2024-11
 
-Commit Message: {commit_message}
-Repository: {repo_name}
-Files Changed: {file_list}
-Code Diff: {code_diff}
+# Custom date range
+python3 main.py --start-date 2024-11-01 --end-date 2024-11-30
 
-Focus on business impact and technical significance. Be specific about what functionality was added, modified, or removed.
+# Disable AI analysis
+python3 main.py --no-ai
+
+# Verbose output
+python3 main.py --verbose
 ```
 
-#### 2.7.8 Error Handling for AI Features
-- **API Unavailable**: Graceful degradation - continue without AI analysis
-- **Token Limits**: Truncate large diffs intelligently, prioritize core changes
-- **Analysis Failures**: Mark commits as "Analysis Failed" with reason
-- **Quality Issues**: Validate AI responses for completeness and relevance
-- **Fallback Strategy**: Use commit message analysis if code diff analysis fails
+## Project Structure
 
-## 3. Technical Requirements
+```
+task-sheet-automation/
+│
+├── main.py                      # Entry point - orchestrates the workflow
+├── requirements.txt             # Python dependencies
+├── .env.example                 # Environment variables template
+├── .gitignore                   # Git ignore rules
+│
+├── src/                         # Source code
+│   ├── core/                    # Core business logic
+│   │   ├── config.py           # Configuration management
+│   │   ├── github_client.py    # GitHub API integration
+│   │   ├── csv_reporter.py     # CSV report generation
+│   │   ├── repository_db.py    # Repository database management
+│   │   └── ai/                 # AI analysis modules
+│   │       ├── analyzer.py     # Detailed commit analysis
+│   │       ├── analyzer_simple.py  # Simplified analyzer
+│   │       └── csv_summarizer.py   # CSV-based summarization
+│   │
+│   └── integrations/            # External service integrations
+│       ├── email_sender.py     # Email notifications
+│       ├── whatsapp_sender.py  # WhatsApp Business API
+│       └── google_sheets.py    # Google Sheets integration
+│
+├── scripts/                     # Utility and maintenance scripts
+│   ├── manage_repos.py         # Manage repository configurations
+│   ├── migrate_to_db.py        # Migrate repos from env to DB
+│   ├── verify_all_repos.py     # Verify repository access
+│   ├── verify_repo_access.py   # Verify individual repo access
+│   ├── check_branches.py       # Check branch information
+│   ├── fix_repository_names.py # Fix repository name issues
+│   ├── find_example_repos.py     # Find specific repositories
+│   └── list_accessible_repos.py # List accessible repositories
+│
+├── tests/                       # Test files
+│   └── test_commit_fetch.py    # Test commit fetching
+│
+├── docs/                        # Documentation
+│   ├── PROJECT_README.md       # Detailed project documentation
+│   ├── WHATSAPP_SETUP.md       # WhatsApp setup guide
+│   ├── DATABASE_MIGRATION.md   # Database migration guide
+│   ├── MIGRATION_COMPLETE.md   # Migration completion notes
+│   └── REQUIREMENTS.md         # Original requirements document
+│
+├── data/                        # Data storage
+│   ├── repositories.db         # SQLite database for repositories
+│   └── reports/                # Generated CSV reports
+│
+└── logs/                        # Log files
+    └── commit_tracker.log      # Application logs
+```
 
-### 3.1 APIs and Integrations
-- **GitHub API**: Access to repository commit data and diff information
-- **Claude API**: Anthropic's Claude API for AI-powered code analysis
-- **Google Sheets API**: Spreadsheet creation and formatting
-- **Email Service**: Gmail/SMTP or similar for email delivery
+## Configuration
 
-### 3.2 Authentication
-- **GitHub**: Personal Access Token or GitHub App credentials
-- **Claude API**: Anthropic API key with appropriate usage limits
-- **Google Sheets**: Service account or OAuth2 credentials
-- **Email**: SMTP credentials or Gmail API access
+Configuration is managed through environment variables in the `.env` file:
 
-### 3.3 Scheduling
-- **Primary Schedule**: Last day of each month at 11:59 PM
-- **Backup Schedule**: First day of following month at 9:00 AM (if primary fails)
-- **Manual Trigger**: Ability to run on-demand for specific date ranges
-- **AI Processing**: Account for additional processing time due to AI analysis (estimated 2-5 minutes per commit)
+### Essential Settings
 
-### 3.4 Error Handling
-- **API Rate Limits**: Implement proper rate limiting and retry logic for GitHub and Claude APIs
-- **Network Issues**: Retry mechanisms with exponential backoff
-- **Authentication Failures**: Clear error messages and notification
-- **Data Validation**: Verify data completeness before processing
-- **AI Analysis Failures**: Graceful degradation when AI analysis is unavailable
-- **Token Usage**: Monitor Claude API token consumption and implement usage limits
-- **Notification**: Email notification if script fails with error details
+```bash
+# GitHub API
+GITHUB_TOKEN=your_github_token_here
 
-## 4. Configuration Requirements
+# Claude API
+CLAUDE_API_KEY=your_claude_api_key
+CLAUDE_MODEL=claude-3-5-sonnet-20241022
 
-### 4.1 Configurable Parameters
-- Repository list (easy to add/remove repositories)
-- Email recipient(s)
-- Date range override
-- Output format preferences
-- Scheduling frequency
-- **AI Analysis Settings**:
-  - Enable/disable AI analysis per repository
-  - Claude model selection (Sonnet 4, Opus 4)
-  - Summary length preferences
-  - Custom categorization rules
-  - Token usage limits
+# AI Analysis
+AI_ENABLED=True
+AI_BUDGET_LIMIT=50.0  # Monthly budget in USD
+```
 
-### 4.2 Environment Variables
-- GitHub token
-- Claude API key
-- Google Sheets credentials
-- Email service credentials
-- Recipient email address
-- AI analysis configuration flags
+### Optional Settings
 
-## 5. Security Requirements
+```bash
+# WhatsApp Business API
+WHATSAPP_ENABLED=False
+WHATSAPP_ACCESS_TOKEN=your_access_token
+WHATSAPP_PHONE_NUMBER_ID=your_phone_id
+WHATSAPP_GROUP_IDS=group_id_1,group_id_2
 
-### 5.1 Credential Management
-- Secure storage of API tokens and credentials
-- No hardcoded sensitive information in scripts
-- Use of environment variables or secure vault systems
+# Email Notifications
+EMAIL_SENDER=sender@example.com
+EMAIL_PASSWORD=your_app_password
+EMAIL_RECIPIENT=recipient@example.com
 
-### 5.2 Access Control
-- Minimum required permissions for GitHub access
-- Read-only access where possible
-- Secure handling of generated spreadsheets
+# Performance
+PARALLEL_PROCESSING=True
+MAX_WORKERS=5
+BATCH_SIZE=100
 
-## 6. Performance Requirements
+# Logging
+LOG_LEVEL=INFO
+```
 
-### 6.1 Execution Time
-- Complete execution within 60 minutes for typical monthly data (increased from 30 minutes due to AI processing)
-- Efficient API usage to avoid rate limiting across multiple services
-- Batch processing for large datasets
-- Parallel processing where possible for AI analysis
+See `.env.example` for all available options.
 
-### 6.2 Resource Usage
-- Minimal server resource consumption
-- Efficient memory usage for large commit datasets
-- **AI Processing Considerations**:
-  - Token usage optimization for Claude API
-  - Intelligent diff truncation for large commits
-  - Caching of AI responses to avoid reprocessing
-  - Cost monitoring and budget controls
+## Repository Management
 
-## 7. Monitoring and Logging
+Repositories are managed in a SQLite database for better organization:
 
-### 7.1 Logging Requirements
-- Execution start/end times
-- Number of commits processed per repository
-- API calls made and rate limit status for all services (GitHub, Claude, Google Sheets)
-- AI analysis success/failure rates
-- Token usage statistics for Claude API
-- Cost tracking for AI services
-- Error occurrences and resolution attempts
+### List Repositories
 
-### 7.2 Success Confirmation
-- Email confirmation when report is successfully generated and sent
-- Summary statistics in the confirmation email including:
-  - Total commits processed
-  - AI analysis completion rate
-  - Categorization breakdown
-  - Token usage summary
-  - Processing time metrics
+```bash
+python3 scripts/manage_repos.py list
+python3 scripts/manage_repos.py list --all  # Include disabled repos
+```
 
-## 8. Testing Requirements
+### Add Repository
 
-### 8.1 Unit Testing
-- Individual function testing for data extraction, formatting, and delivery
-- Mock API responses for testing edge cases
+```bash
+python3 scripts/manage_repos.py add owner/repo-name branch-name
+```
 
-### 8.2 Integration Testing
-- End-to-end testing with actual GitHub repositories
-- Google Sheets creation and formatting verification
-- Email delivery confirmation
+### Update Repository
 
-### 8.3 Edge Case Testing
-- Empty repositories (no commits)
-- Repositories with large numbers of commits
-- Very large commit diffs (>10MB)
-- Binary file changes (images, executables)
-- Merge commits with complex diffs
-- Claude API rate limiting and failures
-- Network connectivity issues
-- Mixed programming languages in single commit
-- Commits with no meaningful code changes
-- AI analysis timeout scenarios
+```bash
+# Disable a repository
+python3 scripts/manage_repos.py update owner/repo-name branch-name --disable
 
-## 9. Deployment Requirements
+# Enable a repository
+python3 scripts/manage_repos.py update owner/repo-name branch-name --enable
 
-### 9.1 Hosting Options
-- Cloud function (AWS Lambda, Google Cloud Functions, etc.)
-- Scheduled job on cloud platform
-- Local server with cron job
-- GitHub Actions workflow
+# Disable AI for a specific repo
+python3 scripts/manage_repos.py update owner/repo-name branch-name --disable-ai
+```
 
-### 9.2 Backup and Recovery
-- Script backup and version control
-- Configuration backup
-- Recovery procedures for failed executions
+### Delete Repository
 
-## 10. Maintenance and Updates
+```bash
+python3 scripts/manage_repos.py delete owner/repo-name branch-name
+```
 
-### 10.1 Regular Maintenance
-- Monthly review of script performance
-- Quarterly security review of credentials
-- Annual review of repository list and requirements
+### Verify Access
 
-### 10.2 Future Enhancements
-- Web dashboard for viewing historical reports
-- Additional output formats (PDF, CSV)
-- Advanced filtering and search capabilities
-- Integration with project management tools
-- **AI-Powered Enhancements**:
-  - Trend analysis across multiple months
-  - Developer productivity insights
-  - Code complexity scoring
-  - Risk assessment for changes
-  - Automated code review suggestions
-  - Integration with other AI models for specialized analysis
-  - Custom AI prompts for specific project types
+```bash
+# Verify all repositories
+python3 scripts/verify_all_repos.py
 
-## 11. Success Criteria
+# Verify specific repository
+python3 scripts/verify_repo_access.py owner/repo-name
+```
 
-### 11.1 Primary Success Metrics
-- 100% successful monthly report generation
-- Zero manual intervention required
-- Reports delivered within 24 hours of month-end
-- Complete and accurate data capture
-- **AI Analysis Metrics**:
-  - >95% successful AI analysis completion rate
-  - <10% "Analysis Failed" entries per report
-  - Meaningful and accurate summaries for >90% of commits
+## AI Analysis
 
-### 11.2 Quality Metrics
-- Data accuracy: 99.9% of commits captured correctly
-- Delivery reliability: 99% successful email delivery
-- Processing time: Under 60 minutes for monthly data (including AI analysis)
-- **AI Quality Metrics**:
-  - Summary relevance score: >8/10 based on sample review
-  - Categorization accuracy: >90% correct classification
-  - Cost efficiency: <$X per month in Claude API usage (define budget)
+The system uses Claude AI to analyze commit diffs and generate:
 
-## 12. Timeline and Milestones
+- **Human-readable summaries** - Plain language explanations of technical changes
+- **Change categorization** - Automatic classification (Feature, Bug Fix, Refactor, etc.)
+- **Impact assessment** - Understanding the scope of changes
 
-### Phase 1: Development (Weeks 1-3)
-- API integration setup (GitHub, Claude, Google Sheets)
-- Core data extraction logic
-- AI analysis implementation and prompt engineering
-- Basic Google Sheets generation with new columns
+### Change Categories
 
-### Phase 2: Integration & Testing (Weeks 4-5)
-- Email delivery implementation
-- Error handling and logging
-- AI analysis testing and optimization
-- Performance testing with large datasets
+- Feature - New functionality
+- Bug Fix - Fixing issues
+- Refactor - Code restructuring
+- Performance - Optimizations
+- Security - Security improvements
+- Documentation - Doc updates
+- Configuration - Config changes
+- Dependencies - Package updates
+- Database - Schema changes
+- UI/UX - Interface improvements
+- Test - Testing changes
+- Build/Deploy - Build system changes
+- Other - Miscellaneous
 
-### Phase 3: Deployment (Week 6)
-- Production deployment
-- Scheduling setup
-- Cost monitoring implementation
-- Documentation and handover
+## Output
 
-## 13. Support and Documentation
+The system generates:
 
-### 13.1 Documentation Deliverables
-- Technical documentation for the script
-- Configuration guide (including AI settings)
-- Troubleshooting guide
-- User manual for manual execution
-- **AI-Specific Documentation**:
-  - Claude API integration guide
-  - Prompt customization instructions
-  - Cost monitoring and optimization guide
-  - AI analysis quality assessment procedures
+1. **Main CSV Report** - All commits from all repositories
+2. **Individual Repository Reports** - Separate CSV per repository/branch
+3. **AI Summary Report** - Point-wise summaries and overall analysis (if AI enabled)
 
-### 13.2 Support Requirements
-- Initial 30-day support period
-- Knowledge transfer session
-- Contact information for ongoing support
+Reports are saved in `data/reports/` directory.
+
+## Troubleshooting
+
+### Common Issues
+
+**Rate Limiting**
+```bash
+# Reduce parallel workers or increase delays
+# In .env: MAX_WORKERS=3
+```
+
+**Authentication Failures**
+```bash
+# Verify API keys in .env file
+# Check token permissions on GitHub/Claude
+```
+
+**Database Issues**
+```bash
+# Check database location: data/repositories.db
+# Verify with: python scripts/manage_repos.py list
+```
+
+**Import Errors**
+```bash
+# Ensure you're running from project root
+cd /path/to/task-sheet-automation
+python main.py
+```
+
+### Logs
+
+Application logs are stored in `logs/commit_tracker.log`. Use `--verbose` flag to see logs in console.
+
+## Development
+
+### Adding New Features
+
+1. Core logic goes in `src/core/`
+2. External integrations go in `src/integrations/`
+3. Utility scripts go in `scripts/`
+4. Tests go in `tests/`
+
+### Code Style
+
+- Follow PEP 8 guidelines
+- Keep files under 300 lines
+- Add docstrings to functions and classes
+- Update imports when moving files
+
+## Documentation
+
+- **[docs/PROJECT_README.md](docs/PROJECT_README.md)** - Comprehensive project documentation
+- **[docs/WHATSAPP_SETUP.md](docs/WHATSAPP_SETUP.md)** - WhatsApp integration setup
+- **[docs/DATABASE_MIGRATION.md](docs/DATABASE_MIGRATION.md)** - Database migration guide
+- **[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)** - Original requirements document
+
+## License
+
+MIT License - See LICENSE file for details
+
+## Contributing
+
+Contributions are welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ---
 
-## 14. AI Feature Cost Considerations
-
-### 14.1 Cost Estimation
-- **Claude API Pricing**: Based on token usage (input + output tokens)
-- **Estimated Monthly Cost**: 
-  - Small repos (50-100 commits/month): $5-15
-  - Medium repos (200-500 commits/month): $20-50
-  - Large repos (1000+ commits/month): $75-150
-- **Cost Variables**: 
-  - Number of commits
-  - Size of code diffs
-  - Complexity of changes
-  - Model selection (Sonnet vs Opus)
-
-### 14.2 Cost Optimization Strategies
-- **Intelligent Diff Filtering**: Skip trivial changes (whitespace, comments only)
-- **Batch Processing**: Group similar commits for analysis
-- **Caching**: Store and reuse analysis for identical diffs
-- **Selective Analysis**: Focus on critical repositories or file types
-- **Model Selection**: Use appropriate Claude model based on complexity
-
-### 14.3 Budget Controls
-- **Monthly Spending Limits**: Configurable API usage caps
-- **Alert Thresholds**: Notifications when approaching budget limits
-- **Graceful Degradation**: Disable AI analysis if budget exceeded
-- **Usage Reporting**: Monthly cost breakdown and trends
-
----
-
-**Document Version**: 2.0 (AI-Enhanced)  
-**Last Updated**: [Current Date]  
-**Prepared By**: [Your Name]  
-**Approved By**: [Approval Required]
-
----
-
-## Additional Notes for AI Integration
-
-**Benefits of AI Analysis:**
-- **Enhanced Insights**: Understand the business impact of technical changes
-- **Better Categorization**: Automatically classify commits by type and impact
-- **Non-Technical Summaries**: Make technical changes understandable for management
-- **Pattern Detection**: Identify common types of changes and potential issues
-- **Time Saving**: Eliminate manual review of code changes
-
-**Implementation Considerations:**
-- Start with a pilot implementation on 1-2 repositories
-- Monitor AI analysis quality and adjust prompts as needed
-- Implement cost controls from day one
-- Plan for API failures and graceful degradation
-- Consider data privacy implications of sending code to external AI service
+**Note**: This project was recently restructured for better organization. If you encounter any issues with imports or paths, please open an issue.

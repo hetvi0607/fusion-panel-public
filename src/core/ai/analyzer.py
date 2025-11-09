@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple, Any, Optional
 
 import anthropic
 
-from config import app_config
+from src.core.config import app_config
 
 # Configure logger
 logging.basicConfig(

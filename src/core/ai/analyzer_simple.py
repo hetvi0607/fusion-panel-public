@@ -5,7 +5,7 @@ import logging
 import anthropic
 from typing import Dict, List, Any, Tuple
 
-from config import app_config
+from src.core.config import app_config
 
 logger = logging.getLogger(__name__)
 

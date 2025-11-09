@@ -3,9 +3,9 @@ GitHub Commit Tracking Automation main script.
 
 This script orchestrates the entire process:
 1. Fetches commits from GitHub repositories
-2. Analyzes commits using Claude AI
-3. Generates a CSV report
-4. Sends an email with the report attached
+2. Generates CSV reports (one per repository + combined)
+3. Uses Claude AI to generate point-wise summaries (if AI_ENABLED)
+4. Creates an overall summary CSV
 
 Usage:
     python main.py [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD]
@@ -17,17 +17,15 @@ import sys
 import logging
 import argparse
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import calendar
 from typing import Dict, List, Tuple, Any, Optional
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
 
-from config import app_config
-from github_client import GitHubClient
-from ai_analyzer_simple import SimpleAiAnalyzer
-from csv_reporter import CSVReporter
+from src.core.config import app_config
+from src.core.github_client import GitHubClient
+from src.core.csv_reporter import CSVReporter
+from src.core.ai.csv_summarizer import AICsvSummarizer
+from src.integrations.whatsapp_sender import send_whatsapp_report
 
 # Configure logger
 logging.basicConfig(
@@ -162,59 +160,33 @@ def get_date_range(start_date_arg: Optional[str] = None,
         return prompt_for_date_range()
 
 
-def get_repositories(repo_arg: Optional[str] = None) -> List[str]:
+def get_repositories(repo_arg: Optional[str] = None) -> List[Dict[str, str]]:
     """Get the list of repositories to process.
     
     Args:
         repo_arg: Comma-separated list of repositories. If None, uses config.
         
     Returns:
-        List of repository names in format org/repo
+        List of repository dictionaries with 'repo' and 'branch' keys
     """
     if repo_arg:
         # Use repositories from command line argument
-        repos = [repo.strip() for repo in repo_arg.split(',')]
-        logger.info(f"Using repositories from command line: {', '.join(repos)}")
-        return repos
+        repo_list = []
+        for repo in repo_arg.split(','):
+            repo = repo.strip()
+            if repo:
+                repo_list.append({'repo': repo, 'branch': None})
+        logger.info(f"Using repositories from command line: {', '.join([r['repo'] for r in repo_list])}")
+        return repo_list
     elif app_config.REPOSITORIES:
-        # Use repositories from config
-        repos = list(app_config.REPOSITORIES.keys())
-        logger.info(f"Using repositories from config: {', '.join(repos)}")
-        return repos
+        # Use repositories from config (already in the right format)
+        logger.info(f"Using {len(app_config.REPOSITORIES)} repository configurations from config")
+        return app_config.REPOSITORIES
     else:
         logger.error("No repositories specified in config or command line")
         sys.exit(1)
 
 
-def process_commit(commit: Dict[str, Any], github_client: GitHubClient, ai_analyzer: SimpleAiAnalyzer) -> Dict[str, Any]:
-    """Process a commit, including AI analysis if enabled.
-    
-    Args:
-        commit: Commit data dictionary
-        github_client: GitHub client for API access
-        ai_analyzer: AI analyzer for commit analysis
-        
-    Returns:
-        Processed commit data with additional fields
-    """
-    try:
-        # If AI is enabled, analyze the commit
-        if app_config.AI_ENABLED:
-            # For our new implementation, we can pass the commit dictionary directly
-            # The get_commit_diff method now handles different input types
-            files_changed, diff_content = github_client.get_commit_diff(commit)
-            commit = ai_analyzer.analyze_commit(commit, diff_content, files_changed)
-        else:
-            commit["ai_summary"] = "AI analysis not performed"
-            commit["change_type"] = "Other"
-        
-        return commit
-    
-    except Exception as e:
-        logger.error(f"Error processing commit {commit['sha'][:7]}: {str(e)}")
-        commit["ai_summary"] = f"Processing error: {str(e)[:100]}"
-        commit["change_type"] = "Other"
-        return commit
 
 
 def main():
@@ -253,27 +225,24 @@ def main():
         # Initialize GitHub client
         github_client = GitHubClient()
         
-        # Initialize AI analyzer if enabled
-        ai_analyzer = None
+        # Initialize AI summarizer if enabled
+        ai_summarizer = None
         if app_config.AI_ENABLED:
             try:
-                ai_analyzer = SimpleAiAnalyzer()
-                logger.info("AI analyzer initialized")
+                ai_summarizer = AICsvSummarizer()
+                logger.info("AI summarizer initialized")
             except Exception as e:
-                logger.error(f"Error initializing AI analyzer: {str(e)}")
-                logger.warning("Continuing without AI analysis")
+                logger.error(f"Error initializing AI summarizer: {str(e)}")
+                logger.warning("Continuing without AI summaries")
                 app_config.AI_ENABLED = False
         
         # Fetch commits from all repositories
-        # Fetch commits for each repository
-        logger.info(f"Fetching commits for {len(repositories)} repositories")
+        logger.info(f"Fetching commits for {len(repositories)} repository configurations")
         all_commits = []
-        for repo_name in repositories:
+        for repo_config in repositories:
             try:
-                # Get branch from config if specified
-                branch = None
-                if repo_name in app_config.REPOSITORIES:
-                    branch = app_config.REPOSITORIES[repo_name].get('branch')
+                repo_name = repo_config['repo']
+                branch = repo_config.get('branch')
                 
                 branch_info = f" (branch: {branch})" if branch else ""
                 logger.info(f"Fetching commits for {repo_name}{branch_info}")
@@ -284,7 +253,7 @@ def main():
                 
                 all_commits.extend(repo_commits)
             except Exception as e:
-                logger.error(f"Error fetching commits for {repo_name}: {str(e)}")
+                logger.error(f"Error fetching commits for {repo_config.get('repo', 'unknown')}: {str(e)}")
         
         if not all_commits:
             logger.warning("No commits found in the specified date range")
@@ -292,112 +261,96 @@ def main():
         
         logger.info(f"Total commits fetched: {len(all_commits)}")
         
-        # Process commits with AI analysis if enabled
-        if app_config.AI_ENABLED and ai_analyzer:
-            logger.info("Processing commits with AI analysis")
-            
-            processed_commits = []
-            ai_success_count = 0
-            ai_failure_count = 0
-            
-            # Use ThreadPoolExecutor for parallel processing if enabled
-            if app_config.PARALLEL_PROCESSING:
-                with ThreadPoolExecutor(max_workers=app_config.MAX_WORKERS) as executor:
-                    # Submit all tasks
-                    futures = {
-                        executor.submit(
-                            process_commit, commit, github_client, ai_analyzer
-                        ): commit["sha"] 
-                        for commit in all_commits
-                    }
-                    
-                    # Process results as they complete
-                    for future in tqdm(as_completed(futures), total=len(futures), desc="Processing commits"):
-                        commit_sha = futures[future]
-                        try:
-                            result = future.result()
-                            processed_commits.append(result)
-                            
-                            if result["ai_summary"] and "error" not in result["ai_summary"].lower():
-                                ai_success_count += 1
-                            else:
-                                ai_failure_count += 1
-                                
-                        except Exception as e:
-                            logger.error(f"Error processing commit {commit_sha[:7]}: {str(e)}")
-                            ai_failure_count += 1
-            else:
-                # Sequential processing
-                for commit in tqdm(all_commits, desc="Processing commits"):
-                    try:
-                        result = process_commit(commit, github_client, ai_analyzer)
-                        processed_commits.append(result)
-                        
-                        if result["ai_summary"] and "error" not in result["ai_summary"].lower():
-                            ai_success_count += 1
-                        else:
-                            ai_failure_count += 1
-                            
-                    except Exception as e:
-                        logger.error(f"Error processing commit {commit['sha'][:7]}: {str(e)}")
-                        ai_failure_count += 1
-            
-            # Replace all_commits with processed_commits
-            all_commits = processed_commits
-            
-            logger.info(f"AI analysis complete. "
-                       f"Success: {ai_success_count}, Failures: {ai_failure_count}")
-        
         # Generate report in CSV format
         logger.info("Generating CSV report")
         csv_reporter = CSVReporter()
         report_path = csv_reporter.create_repository_reports(all_commits, month_year)
         logger.info(f"Report generated: {report_path}")
         
-        # Prepare report statistics
-        report_stats = {
-            "total_commits": len(all_commits),
-            "num_repositories": len(repositories),
-            "date_range": f"{start_date} to {end_date}",
-            "observations": []
-        }
-        
-        # Add AI statistics if enabled
-        if app_config.AI_ENABLED and ai_analyzer:
-            report_stats["ai_processed"] = ai_success_count
-            report_stats["ai_failed"] = ai_failure_count
+        # Generate AI summaries if enabled
+        summary_path = None
+        if app_config.AI_ENABLED and ai_summarizer:
+            logger.info("Generating AI summaries from CSV data")
             
-            # Count change types
-            change_types = [commit.get("change_type", "Other") for commit in all_commits]
-            change_type_counts = dict(Counter(change_types))
-            report_stats["change_type_counts"] = change_type_counts
-            
-            # Add AI usage stats
-            usage_stats = ai_analyzer.get_usage_stats()
-            report_stats["ai_token_usage"] = usage_stats["token_usage"]
-            report_stats["ai_cost"] = usage_stats["estimated_cost"]
-            
-            # Add observations
-            if ai_failure_count > 0:
-                failure_percent = (ai_failure_count / len(all_commits)) * 100
-                if failure_percent > 10:
-                    report_stats["observations"].append(
-                        f"High AI analysis failure rate: {failure_percent:.1f}%"
-                    )
+            try:
+                # Generate summaries for each repository + branch combination
+                repo_summaries = {}
+                repo_csv_dir = os.path.dirname(report_path)
+                filename_base = os.path.basename(report_path).replace('.csv', '')
+                
+                # Get unique repo + branch combinations from the commits
+                repo_branch_combos = set((commit["repo_name"], commit.get("branch", "default")) for commit in all_commits)
+                
+                for repo_name, branch in repo_branch_combos:
+                    # Read repository-specific CSV
+                    repo_filename = repo_name.replace('/', '_')
+                    repo_csv_path = os.path.join(repo_csv_dir, f"{filename_base}_{repo_filename}_{branch}.csv")
+                    
+                    if os.path.exists(repo_csv_path):
+                        commits = ai_summarizer.read_csv_data(repo_csv_path)
+                        if commits:
+                            summary_key = f"{repo_name} ({branch})"
+                            summary = ai_summarizer.generate_repository_summary(summary_key, commits)
+                            repo_summaries[summary_key] = summary
+                            logger.info(f"Generated summary for {repo_name} (branch: {branch})")
+                    else:
+                        logger.warning(f"CSV file not found for {repo_name} ({branch}): {repo_csv_path}")
+                
+                # Read all commits from main CSV for overall summary
+                all_csv_commits = ai_summarizer.read_csv_data(report_path)
+                repo_names = [r['repo'] for r in repositories]
+                overall_summary = ai_summarizer.generate_overall_summary(all_csv_commits, repo_names)
+                
+                # Create summary report
+                summary_path = ai_summarizer.create_summary_report(
+                    report_path, repo_summaries, overall_summary, f"{start_date} to {end_date}"
+                )
+                
+                # Get usage stats
+                usage_stats = ai_summarizer.get_usage_stats()
+                logger.info(f"AI summary generation complete. Cost: ${usage_stats['estimated_cost']:.4f}")
+                
+                print(f"\nAI Summary report generated: {summary_path}")
+                print(f"Estimated AI cost: ${usage_stats['estimated_cost']:.4f}")
+                print(f"Tokens used: {usage_stats['total_tokens']} (input: {usage_stats['input_tokens']}, output: {usage_stats['output_tokens']})")
+                
+            except Exception as e:
+                logger.error(f"Error generating AI summaries: {str(e)}")
+                print(f"\nWarning: Failed to generate AI summaries: {str(e)}")
         
         # Log total execution time
         execution_time = time.time() - start_time
         logger.info(f"Total execution time: {execution_time:.2f} seconds")
         
-        print(f"\nReport generated successfully: {report_path}")
+        print(f"\n{'='*60}")
+        print(f"Report generated successfully!")
+        print(f"{'='*60}")
+        print(f"CSV Report: {report_path}")
         print(f"Total commits: {len(all_commits)}")
         print(f"Date range: {start_date} to {end_date}")
-        
-        if app_config.AI_ENABLED and ai_analyzer:
-            print(f"AI analysis: {ai_success_count} successful, {ai_failure_count} failed")
-            print(f"Estimated AI cost: ${usage_stats['estimated_cost']:.2f}")
+        print(f"Repositories: {len(repositories)}")
+        if summary_path:
+            print(f"AI Summary: {summary_path}")
+        print(f"{'='*60}")
         
         # Email notification functionality removed
+        
+        # Send WhatsApp notification if enabled
+        if app_config.WHATSAPP_ENABLED:
+            try:
+                logger.info("Sending WhatsApp notifications")
+                whatsapp_sent = send_whatsapp_report(
+                    csv_path=report_path,
+                    summary_path=summary_path,
+                    date_range=f"{start_date} to {end_date}"
+                )
+                if whatsapp_sent:
+                    logger.info("WhatsApp notifications sent successfully")
+                else:
+                    logger.warning("WhatsApp notifications were not sent")
+            except Exception as e:
+                logger.error(f"Error sending WhatsApp notifications: {str(e)}")
+                print(f"\n⚠️  Warning: Failed to send WhatsApp notifications: {str(e)}")
         
         return 0
         

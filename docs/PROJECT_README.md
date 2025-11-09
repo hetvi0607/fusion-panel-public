@@ -20,29 +20,33 @@ An automated system for collecting, analyzing, and reporting GitHub commits acro
 - **Automated Data Collection**: Fetch commits from multiple GitHub repositories within a specified date range
 - **AI-Powered Analysis**: Use Claude API to generate human-readable summaries of technical code changes
 - **Intelligent Categorization**: Automatically categorize commits by change type (Feature, Bug Fix, etc.)
-- **Report Generation**: Create professional Google Sheets reports with proper formatting
-- **Repository Organization**: Group commits by repository with separate sheets for each
-- **Email Delivery**: Send reports automatically with summary statistics
+- **Report Generation**: Create professional CSV reports and AI summaries
+- **Repository Organization**: Group commits by repository with separate reports for each
+- **WhatsApp Integration**: Send reports and AI summaries to WhatsApp Business groups
+- **Email Delivery**: Send reports automatically with summary statistics (optional)
 - **Cost Management**: Track and optimize Claude API usage to stay within budget
 
 ## System Architecture
 
-The system consists of five main components:
+The system consists of six main components:
 
 1. **GitHub Client**: Interfaces with GitHub API to fetch repository and commit data
 2. **AI Analyzer**: Uses Claude API to analyze commit diffs and generate summaries
-3. **Google Sheets Integration**: Creates and formats detailed reports
-4. **Email Sender**: Delivers reports to specified recipients
-5. **Main Orchestrator**: Coordinates the entire workflow
+3. **CSV Reporter**: Generates detailed CSV reports for all repositories
+4. **WhatsApp Sender**: Delivers reports to WhatsApp Business groups (optional)
+5. **Email Sender**: Delivers reports to specified recipients (optional)
+6. **Main Orchestrator**: Coordinates the entire workflow
 
 ## Prerequisites
 
 - Python 3.8 or higher
 - GitHub Personal Access Token
 - Claude API key (from Anthropic)
-- Google Cloud project with Sheets API enabled
-- Google Service Account with appropriate permissions
-- Email account for sending notifications
+- **WhatsApp Business Account** (optional, for WhatsApp notifications)
+- **Meta Developer Account** (optional, for WhatsApp API access)
+- Google Cloud project with Sheets API enabled (optional)
+- Google Service Account with appropriate permissions (optional)
+- Email account for sending notifications (optional)
 
 ## Installation
 
@@ -93,6 +97,16 @@ Configuration is handled through environment variables or a `.env` file:
 - `AI_BUDGET_LIMIT`: Maximum monthly budget for Claude API usage (default: `$50.00`)
 - `PARALLEL_PROCESSING`: Enable/disable parallel processing for AI analysis (default: `True`)
 - `MAX_WORKERS`: Number of worker threads for parallel processing (default: `5`)
+
+### WhatsApp Business API Settings (Optional)
+
+- `WHATSAPP_ENABLED`: Enable/disable WhatsApp notifications (default: `False`)
+- `WHATSAPP_ACCESS_TOKEN`: Meta WhatsApp Business API access token
+- `WHATSAPP_PHONE_NUMBER_ID`: WhatsApp Business phone number ID
+- `WHATSAPP_BUSINESS_ACCOUNT_ID`: WhatsApp Business Account ID
+- `WHATSAPP_GROUP_IDS`: Comma-separated list of recipient IDs (phone numbers or group IDs)
+
+**For detailed WhatsApp setup instructions, see [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md)**
 
 See `.env.example` for all available configuration options.
 

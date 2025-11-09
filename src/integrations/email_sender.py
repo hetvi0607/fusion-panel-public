@@ -7,7 +7,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, List, Any, Optional
 
-from config import app_config
+from src.core.config import app_config
 
 # Configure logger
 logging.basicConfig(

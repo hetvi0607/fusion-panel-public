@@ -9,7 +9,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError, SpreadsheetNotFound
 
-from config import app_config
+from src.core.config import app_config
 
 # Configure logger
 logging.basicConfig(
