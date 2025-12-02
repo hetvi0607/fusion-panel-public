@@ -55,9 +55,13 @@ class CSVReporter:
                 "Date Time", "Username", "Repository", "Branch"
             ]
             
-            # Create a filename based on month and year
-            filename_base = f"{month_year.replace(' ', '_').lower()}"
-            main_csv_path = os.path.join(self.output_dir, f"{filename_base}.csv")
+            # Create month folder name (e.g., "november-2025")
+            month_folder = month_year.replace(' ', '-').lower()
+            month_dir = os.path.join(self.output_dir, month_folder)
+            os.makedirs(month_dir, exist_ok=True)
+            
+            # Create main CSV file in month folder
+            main_csv_path = os.path.join(month_dir, "all_commits.csv")
             
             # Sort all commits by date (oldest to newest)
             sorted_all_commits = sorted(
@@ -107,9 +111,17 @@ class CSVReporter:
                     key=lambda x: x["date_time"] if isinstance(x["date_time"], datetime) else datetime.now()
                 )
                 
-                # Create a filename based on month, repository name, and branch
-                repo_filename = repo_name.replace('/', '_')
-                repo_csv_path = os.path.join(self.output_dir, f"{filename_base}_{repo_filename}_{branch}.csv")
+                # Sanitize repo and branch names for filesystem
+                # Replace forward slashes with hyphens to avoid path issues
+                repo_sanitized = repo_name.replace('/', '-')
+                branch_sanitized = branch.replace('/', '-')
+                
+                # Create hierarchical directory structure: month/repo/branch/
+                repo_branch_dir = os.path.join(month_dir, repo_sanitized, branch_sanitized)
+                os.makedirs(repo_branch_dir, exist_ok=True)
+                
+                # Create CSV file in the branch directory
+                repo_csv_path = os.path.join(repo_branch_dir, "commits.csv")
                 
                 # Write repository commits to a separate CSV file
                 with open(repo_csv_path, 'w', newline='', encoding='utf-8') as csvfile:

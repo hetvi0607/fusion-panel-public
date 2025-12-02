@@ -275,16 +275,18 @@ def main():
             try:
                 # Generate summaries for each repository + branch combination
                 repo_summaries = {}
-                repo_csv_dir = os.path.dirname(report_path)
-                filename_base = os.path.basename(report_path).replace('.csv', '')
+                month_dir = os.path.dirname(report_path)
                 
                 # Get unique repo + branch combinations from the commits
                 repo_branch_combos = set((commit["repo_name"], commit.get("branch", "default")) for commit in all_commits)
                 
                 for repo_name, branch in repo_branch_combos:
-                    # Read repository-specific CSV
-                    repo_filename = repo_name.replace('/', '_')
-                    repo_csv_path = os.path.join(repo_csv_dir, f"{filename_base}_{repo_filename}_{branch}.csv")
+                    # Sanitize repo and branch names to match the new directory structure
+                    repo_sanitized = repo_name.replace('/', '-')
+                    branch_sanitized = branch.replace('/', '-')
+                    
+                    # Build path to repository-specific CSV using new hierarchical structure
+                    repo_csv_path = os.path.join(month_dir, repo_sanitized, branch_sanitized, "commits.csv")
                     
                     if os.path.exists(repo_csv_path):
                         commits = ai_summarizer.read_csv_data(repo_csv_path)

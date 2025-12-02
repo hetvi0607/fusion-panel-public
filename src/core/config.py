@@ -56,40 +56,7 @@ class Config:
         try:
             from src.core.repository_db import RepositoryDB
             db = RepositoryDB()
-            repositories = db.get_repositories(enabled_only=True)
-            
-            if not repositories:
-                # Fallback to environment variables if database is empty
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning("No repositories found in database. Falling back to environment variables.")
-                
-                # Parse repository-branch mappings (prioritize this)
-                if os.getenv("GITHUB_REPOS_BRANCHES", ""):
-                    for repo_branch in os.getenv("GITHUB_REPOS_BRANCHES", "").split(","):
-                        if ":" in repo_branch:
-                            repo, branch = repo_branch.split(":", 1)
-                            repo = repo.strip()
-                            branch = branch.strip()
-                            if repo:
-                                repositories.append({
-                                    "repo": repo,
-                                    "branch": branch,
-                                    "enabled": True,
-                                    "ai_enabled": True
-                                })
-                else:
-                    # Fallback to standard repository list without branches
-                    for repo in os.getenv("GITHUB_REPOS", "").split(","):
-                        if repo.strip():
-                            repositories.append({
-                                "repo": repo.strip(),
-                                "branch": None,
-                                "enabled": True,
-                                "ai_enabled": True
-                            })
-            
-            return repositories
+            return db.get_repositories(enabled_only=True)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
