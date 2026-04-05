@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Reports - Commit Tracker{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900">Reports</h1>
+    <p class="mt-1 text-sm text-gray-500">Browse and download generated commit reports</p>
+</div>
+
+{% if months %}
+<div class="space-y-6">
+    {% for month in months %}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between cursor-pointer"
+             onclick="toggleMonth('month-{{ loop.index }}')">
+            <div class="flex items-center">
+                <i class="fa-solid fa-calendar-days text-indigo-500 mr-3"></i>
+                <h2 class="text-base font-semibold text-gray-900 capitalize">{{ month.name.replace('-', ' ') }}</h2>
+                <span class="ml-3 inline-flex items-center rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                    {{ month.files | length }} files
+                </span>
+            </div>
+            <i id="chevron-month-{{ loop.index }}" class="fa-solid fa-chevron-down text-gray-400 transition-transform"></i>
+        </div>
+        <div id="month-{{ loop.index }}" class="{% if not loop.first %}hidden{% endif %}">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50/50">
+                    <tr>
+                        <th class="px-6 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">File</th>
+                        <th class="px-6 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Directory</th>
+                        <th class="px-6 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Size</th>
+                        <th class="px-6 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    {% for file in month.files %}
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-3">
+                            <div class="flex items-center">
+                                {% if file.name.endswith('.csv') %}
+                                <i class="fa-solid fa-file-csv text-emerald-500 mr-2.5"></i>
+                                {% else %}
+                                <i class="fa-solid fa-file-lines text-blue-500 mr-2.5"></i>
+                                {% endif %}
+                                <span class="text-sm font-medium text-gray-900">{{ file.name }}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-3">
+                            <span class="text-xs text-gray-500 font-mono">{{ file.dir }}</span>
+                        </td>
+                        <td class="px-6 py-3 text-right">
+                            <span class="text-xs text-gray-500">{{ file.size_kb }} KB</span>
+                        </td>
+                        <td class="px-6 py-3 text-right">
+                            <div class="flex items-center justify-end space-x-2">
+                                <a href="/reports/view/{{ file.rel }}"
+                                   class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                                    <i class="fa-solid fa-eye text-[10px] mr-1"></i> View
+                                </a>
+                                <a href="/reports/download/{{ file.rel }}"
+                                   class="inline-flex items-center rounded-md bg-white border border-indigo-200 px-2.5 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 transition-colors">
+                                    <i class="fa-solid fa-download text-[10px] mr-1"></i> Download
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 text-center py-16">
+    <i class="fa-solid fa-inbox text-gray-300 text-5xl mb-4"></i>
+    <p class="text-gray-500 mb-2">No reports generated yet.</p>
+    <a href="/generate" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">Generate your first report →</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleMonth(id) {
+    const el = document.getElementById(id);
+    const chevron = document.getElementById('chevron-' + id);
+    el.classList.toggle('hidden');
+    chevron.classList.toggle('rotate-180');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Generate Invoice - Commit Tracker{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900">Generate Invoice</h1>
+    <p class="mt-1 text-sm text-gray-500">Create a DOCX invoice from commit data with AI-powered work categorization</p>
+</div>
+
+<form method="POST" action="/invoice" class="space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left Column: Settings -->
+        <div class="lg:col-span-1 space-y-6">
+
+            <!-- Date Range -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">
+                    <i class="fa-solid fa-calendar-days text-orange-500 mr-2"></i>Date Range
+                </h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                        <input type="date" name="start_date" id="start_date" value="{{ default_start }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                        <input type="date" name="end_date" id="end_date" value="{{ default_end }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div class="pt-2">
+                        <p class="text-xs font-medium text-gray-500 mb-2">Quick Select</p>
+                        <div class="flex flex-wrap gap-2">
+                            <button type="button" onclick="setThisMonth()" class="px-3 py-1 text-xs rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors">This Month</button>
+                            <button type="button" onclick="setLastMonth()" class="px-3 py-1 text-xs rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors">Last Month</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Billing Info -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">
+                    <i class="fa-solid fa-building text-orange-500 mr-2"></i>Bill To
+                </h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Company / Name</label>
+                        <input type="text" name="bill_to_name" value="Humane World for Animals"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Address Line 1</label>
+                        <input type="text" name="bill_to_addr1" value="1255 23rd Street, NW, Suite 450"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Address Line 2</label>
+                        <input type="text" name="bill_to_addr2" value="Washington, DC 20037"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Invoice Details -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">
+                    <i class="fa-solid fa-file-invoice text-orange-500 mr-2"></i>Invoice Details
+                </h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Invoice No</label>
+                        <input type="text" name="invoice_no" placeholder="e.g. 0202202601" id="invoice_no_field"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">PO #</label>
+                        <input type="text" name="po_number" placeholder="e.g. 9293"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Invoice For</label>
+                        <input type="text" name="invoice_for" id="invoice_for_field" placeholder="e.g. January Month 2026"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Date Submitted</label>
+                        <input type="text" name="date_submitted" id="date_submitted_field" placeholder="e.g. 02/02/2026"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit -->
+            <button type="submit"
+                    class="w-full flex items-center justify-center rounded-xl bg-orange-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-orange-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 transition-colors">
+                <i class="fa-solid fa-file-invoice mr-2"></i> Generate Invoice
+            </button>
+        </div>
+
+        <!-- Right Column: Repository Selection + Labels -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-base font-semibold text-gray-900">
+                        <i class="fa-solid fa-code-branch text-orange-500 mr-2"></i>Repositories
+                    </h2>
+                    <div class="flex items-center space-x-2">
+                        <button type="button" onclick="selectAll()" class="text-xs text-orange-600 hover:text-orange-500 font-medium">Select All</button>
+                        <span class="text-gray-300">|</span>
+                        <button type="button" onclick="deselectAll()" class="text-xs text-orange-600 hover:text-orange-500 font-medium">Deselect All</button>
+                    </div>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">Select repositories and optionally give each a display label for the invoice (e.g. "Android Development"). AI will use these labels when categorizing work.</p>
+                {% if repos %}
+                <div class="space-y-3 max-h-[560px] overflow-y-auto pr-2">
+                    {% for repo in repos %}
+                    <div class="p-3 rounded-lg border border-gray-200 hover:border-orange-300 hover:bg-orange-50/30 transition-colors">
+                        <label class="flex items-center cursor-pointer">
+                            <input type="checkbox" name="repos" value="{{ repo.repo }}:{{ repo.branch }}" checked
+                                   class="repo-checkbox h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500">
+                            <div class="ml-3 flex-1 min-w-0">
+                                <p class="text-sm font-medium text-gray-900 truncate">{{ repo.repo }}</p>
+                                <p class="text-xs text-gray-500">
+                                    <i class="fa-solid fa-code-branch mr-1 text-[10px]"></i>{{ repo.branch }}
+                                </p>
+                            </div>
+                        </label>
+                        <div class="mt-2 ml-7">
+                            <input type="text" name="label_{{ repo.repo }}:{{ repo.branch }}" placeholder="Invoice label (e.g. Android Development)"
+                                   class="block w-full rounded-md border-gray-200 shadow-sm focus:border-orange-400 focus:ring-orange-400 text-xs px-2.5 py-1.5 border bg-white placeholder-gray-400">
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-8">
+                    <i class="fa-solid fa-inbox text-gray-300 text-3xl mb-2"></i>
+                    <p class="text-sm text-gray-500">No enabled repositories.</p>
+                    <a href="/repos" class="text-sm text-orange-600 hover:text-orange-500">Add repositories &rarr;</a>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- How It Works -->
+            <div class="bg-orange-50 border border-orange-200 rounded-xl p-5">
+                <h3 class="text-sm font-semibold text-orange-800 mb-2"><i class="fa-solid fa-circle-info mr-1.5"></i>How It Works</h3>
+                <ol class="text-xs text-orange-700 space-y-1.5 list-decimal list-inside">
+                    <li>Commits are fetched from selected repositories for the date range</li>
+                    <li>Claude AI categorizes commits into work categories (e.g. Android Development, Backend/API, Web Application)</li>
+                    <li>AI estimates hours and generates concise bullet-point summaries for each category</li>
+                    <li>A professionally formatted DOCX invoice is generated with the Example Company template</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pad(n) { return n < 10 ? '0' + n : n; }
+function fmt(d) { return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
+const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function autoFillInvoiceFor() {
+    const sd = document.getElementById('start_date').value;
+    if (sd) {
+        const d = new Date(sd);
+        document.getElementById('invoice_for_field').value = months[d.getMonth()] + ' Month ' + d.getFullYear();
+    }
+}
+
+function setThisMonth() {
+    const now = new Date();
+    document.getElementById('start_date').value = fmt(new Date(now.getFullYear(), now.getMonth(), 1));
+    document.getElementById('end_date').value = fmt(now);
+    autoFillInvoiceFor();
+}
+function setLastMonth() {
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    const last = new Date(now.getFullYear(), now.getMonth(), 0);
+    document.getElementById('start_date').value = fmt(first);
+    document.getElementById('end_date').value = fmt(last);
+    autoFillInvoiceFor();
+}
+function selectAll() {
+    document.querySelectorAll('.repo-checkbox').forEach(cb => cb.checked = true);
+}
+function deselectAll() {
+    document.querySelectorAll('.repo-checkbox').forEach(cb => cb.checked = false);
+}
+
+// Auto-fill "Invoice For" and "Date Submitted" on load
+document.addEventListener('DOMContentLoaded', function() {
+    autoFillInvoiceFor();
+    const now = new Date();
+    document.getElementById('date_submitted_field').value = pad(now.getDate()) + '/' + pad(now.getMonth()+1) + '/' + now.getFullYear();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ filename }} - Commit Tracker{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+        <a href="/reports" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-arrow-left"></i></a>
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">{{ filename }}</h1>
+            <p class="mt-0.5 text-sm text-gray-500 font-mono">{{ rel_path }}</p>
+        </div>
+    </div>
+    <a href="/reports/download/{{ rel_path }}"
+       class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+        <i class="fa-solid fa-download mr-2"></i> Download
+    </a>
+</div>
+
+{% if is_csv %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    {% for header in headers %}
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{{ header }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for row in rows %}
+                <tr class="hover:bg-gray-50 transition-colors">
+                    {% for cell in row %}
+                    <td class="px-4 py-3 text-sm text-gray-700 {% if loop.index0 == 2 %}max-w-[200px] truncate{% elif loop.index0 == 3 %}max-w-[400px]{% endif %}">
+                        {% if cell.startswith('http') %}
+                        <a href="{{ cell }}" target="_blank" class="text-indigo-600 hover:text-indigo-500 truncate block max-w-[200px]">
+                            {{ cell | truncate(50) }} <i class="fa-solid fa-up-right-from-square text-[9px]"></i>
+                        </a>
+                        {% else %}
+                        {{ cell }}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="px-4 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
+        {{ rows | length }} rows
+    </div>
+</div>
+{% else %}
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <pre class="whitespace-pre-wrap text-sm text-gray-800 font-mono leading-relaxed">{{ text_content }}</pre>
+</div>
+{% endif %}
+{% endblock %}

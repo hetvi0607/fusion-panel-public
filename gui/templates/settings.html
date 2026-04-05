@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Settings - Commit Tracker{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900">Settings</h1>
+    <p class="mt-1 text-sm text-gray-500">View current configuration (edit <code class="text-xs bg-gray-100 px-1.5 py-0.5 rounded">.env</code> file to change)</p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- API Keys -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-4">
+            <i class="fa-solid fa-key text-amber-500 mr-2"></i>API Credentials
+        </h2>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">GitHub Token</label>
+                <div class="flex items-center bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                    <i class="fa-brands fa-github text-gray-400 mr-2"></i>
+                    <span class="text-sm font-mono text-gray-700">{{ settings.GITHUB_TOKEN }}</span>
+                    {% if settings.GITHUB_TOKEN and settings.GITHUB_TOKEN != '***' %}
+                    <span class="ml-auto inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">Set</span>
+                    {% else %}
+                    <span class="ml-auto inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">Not Set</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Claude API Key</label>
+                <div class="flex items-center bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                    <i class="fa-solid fa-robot text-gray-400 mr-2"></i>
+                    <span class="text-sm font-mono text-gray-700">{{ settings.CLAUDE_API_KEY }}</span>
+                    {% if settings.CLAUDE_API_KEY and settings.CLAUDE_API_KEY != '***' %}
+                    <span class="ml-auto inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">Set</span>
+                    {% else %}
+                    <span class="ml-auto inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">Not Set</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Claude Model</label>
+                <div class="bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                    <span class="text-sm font-mono text-gray-700">{{ settings.CLAUDE_MODEL }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Settings -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-4">
+            <i class="fa-solid fa-brain text-purple-500 mr-2"></i>AI Analysis
+        </h2>
+        <div class="space-y-4">
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">AI Enabled</span>
+                {% if settings.AI_ENABLED %}
+                <span class="inline-flex items-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                    <i class="fa-solid fa-circle text-[6px] mr-1.5"></i> On
+                </span>
+                {% else %}
+                <span class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600">
+                    <i class="fa-solid fa-circle text-[6px] mr-1.5"></i> Off
+                </span>
+                {% endif %}
+            </div>
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">Budget Limit</span>
+                <span class="text-sm font-semibold text-gray-900">${{ settings.AI_BUDGET_LIMIT }}</span>
+            </div>
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">Max Tokens</span>
+                <span class="text-sm font-mono text-gray-700">{{ settings.AI_MAX_TOKENS }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-4">
+            <i class="fa-solid fa-gauge-high text-blue-500 mr-2"></i>Performance
+        </h2>
+        <div class="space-y-4">
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">Parallel Processing</span>
+                {% if settings.PARALLEL_PROCESSING %}
+                <span class="inline-flex items-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">On</span>
+                {% else %}
+                <span class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600">Off</span>
+                {% endif %}
+            </div>
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">Max Workers</span>
+                <span class="text-sm font-mono text-gray-700">{{ settings.MAX_WORKERS }}</span>
+            </div>
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">Batch Size</span>
+                <span class="text-sm font-mono text-gray-700">{{ settings.BATCH_SIZE }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- System -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-4">
+            <i class="fa-solid fa-server text-gray-500 mr-2"></i>System
+        </h2>
+        <div class="space-y-4">
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">Environment</span>
+                <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium
+                    {% if settings.ENVIRONMENT == 'production' %}bg-red-50 text-red-700{% else %}bg-amber-50 text-amber-700{% endif %}">
+                    {{ settings.ENVIRONMENT }}
+                </span>
+            </div>
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">Log Level</span>
+                <span class="text-sm font-mono text-gray-700">{{ settings.LOG_LEVEL }}</span>
+            </div>
+            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
+                <span class="text-sm text-gray-700">WhatsApp</span>
+                {% if settings.WHATSAPP_ENABLED %}
+                <span class="inline-flex items-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">Enabled</span>
+                {% else %}
+                <span class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600">Disabled</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+    <div class="flex">
+        <i class="fa-solid fa-circle-info text-blue-400 mt-0.5"></i>
+        <div class="ml-3">
+            <p class="text-sm text-blue-700">
+                To modify settings, edit the <code class="bg-blue-100 px-1.5 py-0.5 rounded text-xs">.env</code> file in the project root and restart the GUI server.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

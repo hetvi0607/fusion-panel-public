@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job_id }} - Commit Tracker{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <div class="flex items-center space-x-3">
+        <a href="/generate" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-arrow-left"></i></a>
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Report Generation</h1>
+            <p class="mt-1 text-sm text-gray-500">Job: {{ job_id }}</p>
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Status Card -->
+    <div class="lg:col-span-1">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="text-center">
+                <div id="status-icon" class="mb-4">
+                    {% if job.status == 'done' %}
+                    <div class="mx-auto w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
+                        <i class="fa-solid fa-check text-green-600 text-2xl"></i>
+                    </div>
+                    {% elif job.status == 'error' %}
+                    <div class="mx-auto w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+                        <i class="fa-solid fa-xmark text-red-600 text-2xl"></i>
+                    </div>
+                    {% else %}
+                    <div class="mx-auto w-16 h-16 rounded-full bg-indigo-100 flex items-center justify-center">
+                        <i class="fa-solid fa-spinner fa-spin text-indigo-600 text-2xl"></i>
+                    </div>
+                    {% endif %}
+                </div>
+                <p id="status-text" class="text-lg font-semibold
+                    {% if job.status == 'done' %}text-green-700{% elif job.status == 'error' %}text-red-700{% else %}text-indigo-700{% endif %}">
+                    {% if job.status == 'done' %}Complete{% elif job.status == 'error' %}Failed{% elif job.status == 'running' %}Running{% else %}Queued{% endif %}
+                </p>
+                <p id="progress-text" class="text-sm text-gray-500 mt-1">{{ job.progress }}</p>
+                <p class="text-xs text-gray-400 mt-2">Started: {{ job.started_at }}</p>
+            </div>
+
+            {% if job.status == 'done' and job.result %}
+            <div class="mt-6 pt-6 border-t border-gray-200 space-y-3">
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Total Commits</span>
+                    <span class="font-semibold text-gray-900">{{ job.result.total_commits }}</span>
+                </div>
+                {% if job.result.date_range %}
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Date Range</span>
+                    <span class="font-medium text-gray-700">{{ job.result.date_range }}</span>
+                </div>
+                {% endif %}
+                {% if job.result.categories %}
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Work Categories</span>
+                    <span class="font-semibold text-gray-900">{{ job.result.categories }}</span>
+                </div>
+                {% endif %}
+                {% if job.result.invoice_filename %}
+                <div class="pt-2">
+                    <a href="/invoice/download/{{ job.result.invoice_filename }}"
+                       class="block w-full text-center rounded-lg bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-orange-500 transition-colors">
+                        <i class="fa-solid fa-download mr-1.5"></i> Download Invoice (.docx)
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="mt-6 space-y-2">
+                {% if job.get('type') == 'invoice' %}
+                <a href="/invoice" class="block w-full text-center rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-500 transition-colors">
+                    <i class="fa-solid fa-plus mr-1"></i> New Invoice
+                </a>
+                {% else %}
+                <a href="/generate" class="block w-full text-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
+                    <i class="fa-solid fa-plus mr-1"></i> New Report
+                </a>
+                <a href="/reports" class="block w-full text-center rounded-lg bg-white border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+                    <i class="fa-solid fa-folder-open mr-1"></i> View Reports
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Log -->
+    <div class="lg:col-span-2">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-base font-semibold text-gray-900"><i class="fa-solid fa-terminal text-gray-400 mr-2"></i>Activity Log</h2>
+            </div>
+            <div id="log-container" class="p-6">
+                <div id="log-entries" class="space-y-2 font-mono text-sm max-h-[500px] overflow-y-auto">
+                    {% for entry in job.log %}
+                    <div class="flex items-start space-x-2">
+                        {% if '✓' in entry %}
+                        <i class="fa-solid fa-circle-check text-green-500 mt-0.5 text-xs flex-shrink-0"></i>
+                        {% elif '✗' in entry %}
+                        <i class="fa-solid fa-circle-xmark text-red-500 mt-0.5 text-xs flex-shrink-0"></i>
+                        {% else %}
+                        <i class="fa-solid fa-circle-info text-blue-400 mt-0.5 text-xs flex-shrink-0"></i>
+                        {% endif %}
+                        <span class="text-gray-700">{{ entry }}</span>
+                    </div>
+                    {% endfor %}
+                    {% if not job.log %}
+                    <p class="text-gray-400 italic">Waiting for activity...</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const jobId = "{{ job_id }}";
+let polling = true;
+
+function updateUI(data) {
+    // Update progress text
+    document.getElementById('progress-text').textContent = data.progress;
+
+    // Update status
+    const statusText = document.getElementById('status-text');
+    const statusIcon = document.getElementById('status-icon');
+
+    if (data.status === 'done') {
+        polling = false;
+        statusText.textContent = 'Complete';
+        statusText.className = 'text-lg font-semibold text-green-700';
+        statusIcon.innerHTML = '<div class="mx-auto w-16 h-16 rounded-full bg-green-100 flex items-center justify-center"><i class="fa-solid fa-check text-green-600 text-2xl"></i></div>';
+        // Reload page to show result details
+        location.reload();
+    } else if (data.status === 'error') {
+        polling = false;
+        statusText.textContent = 'Failed';
+        statusText.className = 'text-lg font-semibold text-red-700';
+        statusIcon.innerHTML = '<div class="mx-auto w-16 h-16 rounded-full bg-red-100 flex items-center justify-center"><i class="fa-solid fa-xmark text-red-600 text-2xl"></i></div>';
+    } else {
+        statusText.textContent = data.status === 'running' ? 'Running' : 'Queued';
+    }
+
+    // Update log
+    const logEntries = document.getElementById('log-entries');
+    if (data.log && data.log.length > 0) {
+        logEntries.innerHTML = '';
+        data.log.forEach(entry => {
+            const div = document.createElement('div');
+            div.className = 'flex items-start space-x-2';
+            let icon = '<i class="fa-solid fa-circle-info text-blue-400 mt-0.5 text-xs flex-shrink-0"></i>';
+            if (entry.includes('✓')) icon = '<i class="fa-solid fa-circle-check text-green-500 mt-0.5 text-xs flex-shrink-0"></i>';
+            else if (entry.includes('✗')) icon = '<i class="fa-solid fa-circle-xmark text-red-500 mt-0.5 text-xs flex-shrink-0"></i>';
+            div.innerHTML = icon + '<span class="text-gray-700">' + entry + '</span>';
+            logEntries.appendChild(div);
+        });
+        logEntries.scrollTop = logEntries.scrollHeight;
+    }
+}
+
+function poll() {
+    if (!polling) return;
+    fetch('/api/job/' + jobId)
+        .then(r => r.json())
+        .then(data => {
+            updateUI(data);
+            if (polling) setTimeout(poll, 1500);
+        })
+        .catch(() => {
+            if (polling) setTimeout(poll, 3000);
+        });
+}
+
+// Start polling if job is not finished
+{% if job.status not in ('done', 'error') %}
+poll();
+{% endif %}
+</script>
+{% endblock %}
