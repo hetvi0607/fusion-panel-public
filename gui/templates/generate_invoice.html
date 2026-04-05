@@ -86,7 +86,12 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Date Submitted</label>
-                        <input type="text" name="date_submitted" id="date_submitted_field" placeholder="e.g. 02/02/2026"
+                        <input type="text" name="date_submitted" id="date_submitted_field" placeholder="e.g. 02/02/2026 (2nd February 2026)"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Per Hour Rate (<span class="font-mono">₹</span>)</label>
+                        <input type="number" name="per_hour_rate" id="per_hour_rate_field" placeholder="e.g. 2000" min="0" step="any"
                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
                     </div>
                 </div>
@@ -164,6 +169,20 @@ function pad(n) { return n < 10 ? '0' + n : n; }
 function fmt(d) { return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
 const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+function ordinal(day) {
+    if (day >= 11 && day <= 13) return day + 'th';
+    switch (day % 10) {
+        case 1: return day + 'st';
+        case 2: return day + 'nd';
+        case 3: return day + 'rd';
+        default: return day + 'th';
+    }
+}
+function fmtDateSubmitted(d) {
+    return pad(d.getDate()) + '/' + pad(d.getMonth()+1) + '/' + d.getFullYear()
+         + ' (' + ordinal(d.getDate()) + ' ' + months[d.getMonth()] + ' ' + d.getFullYear() + ')';
+}
+
 function autoFillInvoiceFor() {
     const sd = document.getElementById('start_date').value;
     if (sd) {
@@ -197,7 +216,7 @@ function deselectAll() {
 document.addEventListener('DOMContentLoaded', function() {
     autoFillInvoiceFor();
     const now = new Date();
-    document.getElementById('date_submitted_field').value = pad(now.getDate()) + '/' + pad(now.getMonth()+1) + '/' + now.getFullYear();
+    document.getElementById('date_submitted_field').value = fmtDateSubmitted(now);
 });
 </script>
 {% endblock %}

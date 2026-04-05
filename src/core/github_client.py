@@ -259,6 +259,59 @@ class GitHubClient:
             logger.error(f"Error getting diff for commit {commit_sha}: {str(e)}")
             return 0, "Error retrieving diff content."
     
+    def fetch_commit_stats(self, commits: List[Dict[str, Any]], progress_callback=None) -> List[Dict[str, Any]]:
+        """Fetch stats (additions/deletions/files changed) for a list of commits.
+
+        Args:
+            commits: List of commit dicts (must have 'repo_name' and 'sha')
+            progress_callback: Optional callable(current, total) for progress updates
+
+        Returns:
+            The same commits list, enriched with 'stats' dict per commit:
+                additions, deletions, files_changed, file_types
+        """
+        for idx, commit in enumerate(commits):
+            repo_name = commit.get("repo_name", "")
+            sha = commit.get("sha", "")
+            if not repo_name or not sha:
+                continue
+
+            try:
+                url = f"{self.api_base_url}/repos/{repo_name}/commits/{sha}"
+                response = requests.get(url, headers=self.headers)
+                response.raise_for_status()
+                data = response.json()
+
+                stats = data.get("stats", {})
+                files = data.get("files", [])
+                # Collect unique file extensions
+                extensions = set()
+                for f in files:
+                    name = f.get("filename", "")
+                    if "." in name:
+                        extensions.add(name.rsplit(".", 1)[-1].lower())
+
+                commit["stats"] = {
+                    "additions": stats.get("additions", 0),
+                    "deletions": stats.get("deletions", 0),
+                    "files_changed": len(files),
+                    "file_types": sorted(extensions),
+                }
+
+                if progress_callback:
+                    progress_callback(idx + 1, len(commits))
+
+                time.sleep(0.05)  # small delay to avoid rate limiting
+
+            except Exception as e:
+                logger.warning(f"Could not fetch stats for {sha[:8]}: {e}")
+                commit["stats"] = {
+                    "additions": 0, "deletions": 0,
+                    "files_changed": 0, "file_types": [],
+                }
+
+        return commits
+
     def close(self):
         """Close the GitHub client connection."""
         logger.info("GitHub client connection closed")

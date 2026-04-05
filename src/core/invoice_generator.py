@@ -22,6 +22,74 @@ from src.core.config import app_config
 
 logger = logging.getLogger(__name__)
 
+# Path to logo image (place your logo at gui/static/logo.png)
+LOGO_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "gui", "static", "logo.png",
+)
+
+
+# ---------------------------------------------------------------------------
+# Number to Indian Rupees words
+# ---------------------------------------------------------------------------
+def _number_to_words(n: int) -> str:
+    """Convert an integer to English words (Indian style)."""
+    if n == 0:
+        return "Zero"
+
+    ones = [
+        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+        "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+        "Seventeen", "Eighteen", "Nineteen",
+    ]
+    tens = [
+        "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety",
+    ]
+
+    def _two_digits(num):
+        if num < 20:
+            return ones[num]
+        return (tens[num // 10] + " " + ones[num % 10]).strip()
+
+    def _three_digits(num):
+        if num >= 100:
+            return ones[num // 100] + " Hundred" + (" and " + _two_digits(num % 100) if num % 100 else "")
+        return _two_digits(num)
+
+    if n < 0:
+        return "Minus " + _number_to_words(-n)
+
+    # Indian numbering: Crore, Lakh, Thousand, Hundred
+    parts = []
+    if n >= 10_000_000:
+        parts.append(_three_digits(n // 10_000_000) + " Crore")
+        n %= 10_000_000
+    if n >= 100_000:
+        parts.append(_two_digits(n // 100_000) + " Lakh")
+        n %= 100_000
+    if n >= 1_000:
+        parts.append(_two_digits(n // 1_000) + " Thousand")
+        n %= 1_000
+    if n > 0:
+        parts.append(_three_digits(n))
+
+    return " ".join(parts)
+
+
+def amount_in_words(amount: float) -> str:
+    """Convert amount to Indian Rupees in words.
+
+    Example: 52000.50 -> 'Indian Rupees Fifty Two Thousand and Fifty Paise Only'
+    """
+    rupees = int(amount)
+    paise = round((amount - rupees) * 100)
+
+    result = "Indian Rupees " + _number_to_words(rupees)
+    if paise:
+        result += " and " + _number_to_words(paise) + " Paise"
+    result += " Only"
+    return result
+
 
 # ---------------------------------------------------------------------------
 # Default invoice metadata
@@ -63,6 +131,8 @@ class InvoiceGenerator:
 
         Args:
             commits: list of commit dicts (keys: repo_name, branch, message, username, date_time, sha)
+                     Each commit may also have a 'stats' dict with:
+                         additions, deletions, files_changed, file_types
             repo_labels: optional mapping of repo_name -> display label
                          e.g. {"example-org/sample-android": "Android Development"}
 
@@ -72,25 +142,50 @@ class InvoiceGenerator:
                 hours     – estimated hours (int)
                 items     – list of bullet-point strings
         """
-        # Build a concise commit listing grouped by repo
+        # Build a detailed commit listing grouped by repo, including code stats
         repo_commits: Dict[str, list] = {}
+        repo_totals: Dict[str, Dict] = {}
         for c in commits:
             repo = c.get("repo_name", c.get("Repository", "unknown"))
             msg = c.get("message", c.get("Commit Message", ""))
-            repo_commits.setdefault(repo, []).append(msg)
+            stats = c.get("stats", {})
+            repo_commits.setdefault(repo, []).append({
+                "msg": msg,
+                "add": stats.get("additions", 0),
+                "del": stats.get("deletions", 0),
+                "files": stats.get("files_changed", 0),
+                "types": stats.get("file_types", []),
+            })
+            totals = repo_totals.setdefault(repo, {"add": 0, "del": 0, "files": 0, "commits": 0})
+            totals["add"] += stats.get("additions", 0)
+            totals["del"] += stats.get("deletions", 0)
+            totals["files"] += stats.get("files_changed", 0)
+            totals["commits"] += 1
 
         listing = ""
-        for repo, msgs in repo_commits.items():
+        for repo, entries in repo_commits.items():
             label = (repo_labels or {}).get(repo, repo)
+            t = repo_totals[repo]
             listing += f"\n## {label} ({repo})\n"
-            for m in msgs[:80]:  # cap per repo
-                listing += f"- {m}\n"
+            listing += f"Summary: {t['commits']} commits, +{t['add']} additions, -{t['del']} deletions, {t['files']} file changes\n"
+            for e in entries[:80]:  # cap per repo
+                stat_str = f" [+{e['add']} -{e['del']}, {e['files']} files]" if e['add'] or e['del'] else ""
+                listing += f"- {e['msg']}{stat_str}\n"
 
-        prompt = f"""You are an invoice assistant. Given the following GitHub commit messages grouped by repository, produce a JSON array of work categories for an invoice.
+        prompt = f"""You are an invoice assistant. Given the following GitHub commit data grouped by repository (including lines of code added/deleted and files changed per commit), produce a JSON array of work categories for an invoice.
+
+HOUR ESTIMATION RULES — estimate hours based on the ACTUAL CODE written:
+- Use the lines added/deleted and number of files changed as the PRIMARY signal for effort.
+- Assume a mixed workflow: some code is AI-assisted (faster to write) and some is written manually by a human developer.
+- Factor in that EVERY piece of code is reviewed and tested by a human, which takes additional time.
+- As a rough guide: ~100-150 lines of meaningful code additions (not config/generated files) ≈ 1 hour of combined writing + review + testing effort.
+- Large deletions or refactors also take significant review time.
+- Config files, lock files, migrations, and auto-generated code take less time per line.
+- Use file types to judge complexity (e.g. .py, .java, .kt, .swift = higher effort; .json, .xml, .yml, .lock = lower effort).
 
 Each element must have:
 - "category": a short human-readable title (e.g. "Android Development", "Backend/API Development", "Web Application", "DevOps / Infrastructure", etc.)
-- "hours": an integer estimate of hours spent (use your best judgement based on commit volume and complexity)
+- "hours": an integer estimate of hours spent based on the code analysis above
 - "items": an array of concise bullet-point strings summarising the work done in that category. Each bullet should be a clear, non-technical description suitable for a client invoice. Combine related commits into single bullets. Aim for 4-8 bullets per category.
 
 IMPORTANT: Return ONLY the raw JSON array, no markdown fences, no explanation.
@@ -138,8 +233,10 @@ Commits:
         bill_to: Dict[str, str],
         invoice_meta: Dict[str, str],
         output_path: str,
+        per_hour_rate: float = 0,
         from_info: Optional[Dict[str, str]] = None,
         footer_info: Optional[Dict[str, str]] = None,
+        logo_path: Optional[str] = None,
     ) -> str:
         """Create the DOCX invoice file.
 
@@ -148,14 +245,17 @@ Commits:
             bill_to: {"name", "address_line1", "address_line2"} for recipient
             invoice_meta: {"invoice_no", "po_number", "invoice_for", "date_submitted"}
             output_path: where to save the .docx
+            per_hour_rate: rate per hour for total amount calculation
             from_info: override sender info (defaults to DEFAULT_FROM)
             footer_info: override footer info (defaults to DEFAULT_FOOTER)
+            logo_path: path to company logo image (defaults to gui/static/logo.png)
 
         Returns:
             Absolute path to the generated DOCX file.
         """
         sender = from_info or DEFAULT_FROM
         footer = footer_info or DEFAULT_FOOTER
+        logo = logo_path or LOGO_PATH
 
         doc = Document()
 
@@ -174,7 +274,7 @@ Commits:
         font.color.rgb = RGBColor(0x33, 0x33, 0x33)
 
         # ===== HEADER =====
-        self._add_header(doc, sender)
+        self._add_header(doc, sender, logo)
 
         # ===== HORIZONTAL LINE =====
         self._add_horizontal_line(doc)
@@ -186,7 +286,7 @@ Commits:
         self._add_billing_section(doc, bill_to, invoice_meta)
 
         # ===== WORK DETAILS TABLE =====
-        self._add_work_details_table(doc, work_details)
+        self._add_work_details_table(doc, work_details, per_hour_rate)
 
         # ===== FOOTER =====
         self._add_footer(doc, footer)
@@ -200,14 +300,21 @@ Commits:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-    def _add_header(self, doc: Document, sender: Dict[str, str]):
-        """Add the Example Company header at top-right."""
+    def _add_header(self, doc: Document, sender: Dict[str, str], logo_path: str = None):
+        """Add company logo (if available) or text header at top-right."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        run = p.add_run("Example Company")
-        run.bold = True
-        run.font.size = Pt(20)
-        run.font.color.rgb = RGBColor(0xE8, 0x6C, 0x00)  # Orange
+        if logo_path and os.path.isfile(logo_path):
+            run = p.add_run()
+            run.add_picture(logo_path, width=Inches(1.8))
+            logger.info(f"Logo added from {logo_path}")
+        else:
+            run = p.add_run("Example Company")
+            run.bold = True
+            run.font.size = Pt(20)
+            run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+            if logo_path:
+                logger.warning(f"Logo not found at {logo_path}, using text fallback")
 
     def _add_horizontal_line(self, doc: Document):
         """Add a thin horizontal rule."""
@@ -301,15 +408,16 @@ Commits:
 
         doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
-    def _add_work_details_table(self, doc: Document, work_details: List[Dict[str, Any]]):
-        """Build the SR. NO. | ON ACCOUNT OF | HOURS table."""
+    def _add_work_details_table(self, doc: Document, work_details: List[Dict[str, Any]],
+                                  per_hour_rate: float = 0):
+        """Build the SR. NO. | ON ACCOUNT OF | HOURS table with totals."""
         # Heading
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        run = p.add_run("Work Details")
-        run.bold = True
-        run.font.size = Pt(12)
-        run.font.color.rgb = RGBColor(0x1A, 0x1A, 0x1A)
+        # run = p.add_run("Work Details")
+        # run.bold = True
+        # run.font.size = Pt(12)
+        # run.font.color.rgb = RGBColor(0x1A, 0x1A, 0x1A)
         p.paragraph_format.space_after = Pt(4)
 
         # Table: header + one row per category
@@ -319,10 +427,26 @@ Commits:
         self._set_table_borders(table)
 
         # Column widths
+        # for row in table.rows:
+        #     row.cells[0].width = Inches(0.7)
+        #     row.cells[1].width = Inches(5.0)
+        #     row.cells[2].width = Inches(0.8)
+
+        # Column widths — disable auto-fit and force widths via XML
+        tbl = table._tbl
+        tblPr = tbl.tblPr
+        tblPr.append(parse_xml(
+            f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'
+        ))
+        col_widths = [Inches(0.4), Inches(5.5), Inches(0.6)]
         for row in table.rows:
-            row.cells[0].width = Inches(0.7)
-            row.cells[1].width = Inches(5.0)
-            row.cells[2].width = Inches(0.8)
+            for i, width in enumerate(col_widths):
+                tc = row.cells[i]._tc
+                tcPr = tc.get_or_add_tcPr()
+                tcW = parse_xml(
+                    f'<w:tcW {nsdecls("w")} w:w="{int(width.emu / 635)}" w:type="dxa"/>'
+                )
+                tcPr.append(tcW)
 
         # Header row
         hdr = table.rows[0]
@@ -333,12 +457,7 @@ Commits:
             run = p.add_run(text)
             run.bold = True
             run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-            # Dark background
-            shading = parse_xml(
-                f'<w:shd {nsdecls("w")} w:fill="2D3748" w:val="clear"/>'
-            )
-            cell._tc.get_or_add_tcPr().append(shading)
+            run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
 
         # Data rows
         total_hours = 0
@@ -359,17 +478,9 @@ Commits:
             rt = pt.add_run(detail["category"])
             rt.bold = True
             rt.font.size = Pt(10)
-            rt.font.color.rgb = RGBColor(0x1A, 0x1A, 0x1A)
 
             hours = detail.get("hours", 0)
             total_hours += hours
-            pt_hours = c1.add_paragraph()
-            pt_hours.paragraph_format.space_before = Pt(1)
-            pt_hours.paragraph_format.space_after = Pt(2)
-            rh = pt_hours.add_run(f"({hours} hours)")
-            rh.italic = True
-            rh.font.size = Pt(9)
-            rh.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
 
             # Bullet items
             for item_text in detail.get("items", []):
@@ -388,7 +499,7 @@ Commits:
             r2.font.size = Pt(10)
             r2.bold = True
 
-        # Total row
+        # Total Hours row
         total_row = table.add_row()
         total_row.cells[0].merge(total_row.cells[1])
         merged = total_row.cells[0]
@@ -404,7 +515,56 @@ Commits:
         rt = pt.add_run(str(total_hours))
         rt.bold = True
         rt.font.size = Pt(11)
-        rt.font.color.rgb = RGBColor(0xE8, 0x6C, 0x00)
+
+        # Per Hour Rate and Total Amount (if rate provided)
+        if per_hour_rate and per_hour_rate > 0:
+            total_amount = total_hours * per_hour_rate
+
+            # Rate row
+            rate_row = table.add_row()
+            rate_row.cells[0].merge(rate_row.cells[1])
+            rm_cell = rate_row.cells[0]
+            prm = rm_cell.paragraphs[0]
+            prm.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            rr = prm.add_run("Per Hour Rate: ")
+            rr.bold = True
+            rr.font.size = Pt(10)
+
+            rv_cell = rate_row.cells[2]
+            prv = rv_cell.paragraphs[0]
+            prv.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            rrv = prv.add_run(f"\u20b9{per_hour_rate:,.0f}")
+            rrv.font.size = Pt(10)
+            rrv.bold = True
+
+            # Total Amount row
+            amt_row = table.add_row()
+            amt_row.cells[0].merge(amt_row.cells[1])
+            am_cell = amt_row.cells[0]
+            pam = am_cell.paragraphs[0]
+            pam.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            ram = pam.add_run("Total Amount: ")
+            ram.bold = True
+            ram.font.size = Pt(11)
+
+            av_cell = amt_row.cells[2]
+            pav = av_cell.paragraphs[0]
+            pav.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            rav = pav.add_run(f"\u20b9{total_amount:,.2f}")
+            rav.bold = True
+            rav.font.size = Pt(12)
+
+            # Amount in words
+            words_p = doc.add_paragraph()
+            words_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            words_p.paragraph_format.space_before = Pt(6)
+            words_p.paragraph_format.space_after = Pt(2)
+            wr = words_p.add_run("Amount in Words: ")
+            wr.bold = True
+            wr.font.size = Pt(9)
+            wv = words_p.add_run(amount_in_words(total_amount))
+            wv.italic = True
+            wv.font.size = Pt(9)
 
         doc.add_paragraph().paragraph_format.space_after = Pt(8)
 

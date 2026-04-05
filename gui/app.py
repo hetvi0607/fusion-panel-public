@@ -382,7 +382,7 @@ def invoice_page():
 
 
 def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
-                    bill_to, invoice_meta):
+                    bill_to, invoice_meta, per_hour_rate):
     """Background worker that generates an invoice DOCX."""
     jobs[job_id]['status'] = 'running'
     jobs[job_id]['progress'] = 'Initializing...'
@@ -410,7 +410,18 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
             jobs[job_id]['result'] = {'total_commits': 0}
             return
 
-        # 2. AI categorization
+        # 2. Fetch commit stats (additions/deletions/files) for accurate hour estimation
+        jobs[job_id]['progress'] = f"Fetching code stats for {len(all_commits)} commits..."
+        def stats_progress(current, total):
+            jobs[job_id]['progress'] = f"Fetching code stats ({current}/{total})..."
+        github_client.fetch_commit_stats(all_commits, progress_callback=stats_progress)
+        total_additions = sum(c.get('stats', {}).get('additions', 0) for c in all_commits)
+        total_deletions = sum(c.get('stats', {}).get('deletions', 0) for c in all_commits)
+        jobs[job_id]['log'].append(
+            f"Code stats: +{total_additions} additions, -{total_deletions} deletions across {len(all_commits)} commits"
+        )
+
+        # 3. AI categorization (with code stats for accurate hour estimation)
         jobs[job_id]['progress'] = f"AI categorizing {len(all_commits)} commits..."
         work_details = invoice_gen.categorize_commits(all_commits, repo_labels)
         jobs[job_id]['log'].append(
@@ -430,6 +441,7 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
             bill_to=bill_to,
             invoice_meta=invoice_meta,
             output_path=output_path,
+            per_hour_rate=per_hour_rate,
         )
 
         usage = invoice_gen.get_usage_stats()
@@ -478,6 +490,12 @@ def generate_invoice():
         if label:
             repo_labels[r['repo']] = label
 
+    # Per hour rate
+    try:
+        per_hour_rate = float(request.form.get("per_hour_rate", "0").strip() or "0")
+    except ValueError:
+        per_hour_rate = 0
+
     # Billing info
     bill_to = {
         "name": request.form.get("bill_to_name", "").strip(),
@@ -505,7 +523,7 @@ def generate_invoice():
     thread = threading.Thread(
         target=run_invoice_job,
         args=(job_id, start_date, end_date, selected_repos, repo_labels,
-              bill_to, invoice_meta),
+              bill_to, invoice_meta, per_hour_rate),
         daemon=True,
     )
     thread.start()
