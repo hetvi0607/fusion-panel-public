@@ -76,7 +76,7 @@ def _number_to_words(n: int) -> str:
     return " ".join(parts)
 
 
-def amount_in_words(amount: float) -> str:
+def amount_in_words_inr(amount: float) -> str:
     """Convert amount to Indian Rupees in words.
 
     Example: 52000.50 -> 'Indian Rupees Fifty Two Thousand and Fifty Paise Only'
@@ -89,6 +89,77 @@ def amount_in_words(amount: float) -> str:
         result += " and " + _number_to_words(paise) + " Paise"
     result += " Only"
     return result
+
+
+def _number_to_words_western(n: int) -> str:
+    """Convert an integer to English words (Western/US style)."""
+    if n == 0:
+        return "Zero"
+
+    ones = [
+        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+        "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+        "Seventeen", "Eighteen", "Nineteen",
+    ]
+    tens = [
+        "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety",
+    ]
+
+    def _two(num):
+        if num < 20:
+            return ones[num]
+        return (tens[num // 10] + " " + ones[num % 10]).strip()
+
+    def _three(num):
+        if num >= 100:
+            return ones[num // 100] + " Hundred" + (" and " + _two(num % 100) if num % 100 else "")
+        return _two(num)
+
+    if n < 0:
+        return "Minus " + _number_to_words_western(-n)
+
+    parts = []
+    if n >= 1_000_000_000:
+        parts.append(_three(n // 1_000_000_000) + " Billion")
+        n %= 1_000_000_000
+    if n >= 1_000_000:
+        parts.append(_three(n // 1_000_000) + " Million")
+        n %= 1_000_000
+    if n >= 1_000:
+        parts.append(_three(n // 1_000) + " Thousand")
+        n %= 1_000
+    if n > 0:
+        parts.append(_three(n))
+
+    return " ".join(parts)
+
+
+def amount_in_words_usd(amount: float) -> str:
+    """Convert amount to US Dollars in words.
+
+    Example: 5200.50 -> 'US Dollars Five Thousand Two Hundred and Fifty Cents Only'
+    """
+    dollars = int(amount)
+    cents = round((amount - dollars) * 100)
+
+    result = "US Dollars " + _number_to_words_western(dollars)
+    if cents:
+        result += " and " + _number_to_words_western(cents) + " Cents"
+    result += " Only"
+    return result
+
+
+def amount_in_words(amount: float, currency: str = "INR") -> str:
+    """Convert amount to words in the given currency."""
+    if currency == "USD":
+        return amount_in_words_usd(amount)
+    return amount_in_words_inr(amount)
+
+
+CURRENCY_SYMBOLS = {
+    "INR": "\u20b9",  # ₹
+    "USD": "$",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +305,7 @@ Commits:
         invoice_meta: Dict[str, str],
         output_path: str,
         per_hour_rate: float = 0,
+        currency: str = "INR",
         from_info: Optional[Dict[str, str]] = None,
         footer_info: Optional[Dict[str, str]] = None,
         logo_path: Optional[str] = None,
@@ -246,6 +318,7 @@ Commits:
             invoice_meta: {"invoice_no", "po_number", "invoice_for", "date_submitted"}
             output_path: where to save the .docx
             per_hour_rate: rate per hour for total amount calculation
+            currency: "INR" or "USD"
             from_info: override sender info (defaults to DEFAULT_FROM)
             footer_info: override footer info (defaults to DEFAULT_FOOTER)
             logo_path: path to company logo image (defaults to gui/static/logo.png)
@@ -286,7 +359,7 @@ Commits:
         self._add_billing_section(doc, bill_to, invoice_meta)
 
         # ===== WORK DETAILS TABLE =====
-        self._add_work_details_table(doc, work_details, per_hour_rate)
+        self._add_work_details_table(doc, work_details, per_hour_rate, currency)
 
         # ===== FOOTER =====
         self._add_footer(doc, footer)
@@ -409,7 +482,7 @@ Commits:
         doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
     def _add_work_details_table(self, doc: Document, work_details: List[Dict[str, Any]],
-                                  per_hour_rate: float = 0):
+                                  per_hour_rate: float = 0, currency: str = "INR"):
         """Build the SR. NO. | ON ACCOUNT OF | HOURS table with totals."""
         # Heading
         p = doc.add_paragraph()
@@ -533,7 +606,8 @@ Commits:
             rv_cell = rate_row.cells[2]
             prv = rv_cell.paragraphs[0]
             prv.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            rrv = prv.add_run(f"\u20b9{per_hour_rate:,.0f}")
+            sym = CURRENCY_SYMBOLS.get(currency, "\u20b9")
+            rrv = prv.add_run(f"{sym}{per_hour_rate:,.0f}")
             rrv.font.size = Pt(10)
             rrv.bold = True
 
@@ -550,7 +624,7 @@ Commits:
             av_cell = amt_row.cells[2]
             pav = av_cell.paragraphs[0]
             pav.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            rav = pav.add_run(f"\u20b9{total_amount:,.2f}")
+            rav = pav.add_run(f"{sym}{total_amount:,.2f}")
             rav.bold = True
             rav.font.size = Pt(12)
 
@@ -562,7 +636,7 @@ Commits:
             wr = words_p.add_run("Amount in Words: ")
             wr.bold = True
             wr.font.size = Pt(9)
-            wv = words_p.add_run(amount_in_words(total_amount))
+            wv = words_p.add_run(amount_in_words(total_amount, currency))
             wv.italic = True
             wv.font.size = Pt(9)
 

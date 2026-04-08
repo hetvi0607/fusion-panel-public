@@ -382,7 +382,7 @@ def invoice_page():
 
 
 def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
-                    bill_to, invoice_meta, per_hour_rate):
+                    bill_to, invoice_meta, per_hour_rate, currency):
     """Background worker that generates an invoice DOCX."""
     jobs[job_id]['status'] = 'running'
     jobs[job_id]['progress'] = 'Initializing...'
@@ -442,6 +442,7 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
             invoice_meta=invoice_meta,
             output_path=output_path,
             per_hour_rate=per_hour_rate,
+            currency=currency,
         )
 
         usage = invoice_gen.get_usage_stats()
@@ -490,11 +491,14 @@ def generate_invoice():
         if label:
             repo_labels[r['repo']] = label
 
-    # Per hour rate
+    # Per hour rate and currency
     try:
         per_hour_rate = float(request.form.get("per_hour_rate", "0").strip() or "0")
     except ValueError:
         per_hour_rate = 0
+    currency = request.form.get("currency", "INR").strip().upper()
+    if currency not in ("INR", "USD"):
+        currency = "INR"
 
     # Billing info
     bill_to = {
@@ -523,7 +527,7 @@ def generate_invoice():
     thread = threading.Thread(
         target=run_invoice_job,
         args=(job_id, start_date, end_date, selected_repos, repo_labels,
-              bill_to, invoice_meta, per_hour_rate),
+              bill_to, invoice_meta, per_hour_rate, currency),
         daemon=True,
     )
     thread.start()
