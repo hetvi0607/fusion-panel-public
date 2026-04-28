@@ -264,36 +264,23 @@ IMPORTANT: Return ONLY the raw JSON array, no markdown fences, no explanation.
 Commits:
 {listing}
 """
-        try:
-            message = self.client.messages.create(
-                model=self.model,
-                max_tokens=2000,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            self.total_input_tokens += message.usage.input_tokens
-            self.total_output_tokens += message.usage.output_tokens
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        self.total_input_tokens += message.usage.input_tokens
+        self.total_output_tokens += message.usage.output_tokens
 
-            raw = message.content[0].text.strip()
-            # Strip markdown fences if present
-            if raw.startswith("```"):
-                raw = raw.split("\n", 1)[1]
-                if raw.endswith("```"):
-                    raw = raw[: raw.rfind("```")]
-            categories = json.loads(raw)
-            logger.info(f"AI returned {len(categories)} work categories")
-            return categories
-        except Exception as e:
-            logger.error(f"AI categorization failed: {e}")
-            # Fallback: one category per repo
-            fallback = []
-            for repo, msgs in repo_commits.items():
-                label = (repo_labels or {}).get(repo, repo)
-                fallback.append({
-                    "category": label,
-                    "hours": max(1, len(msgs) // 5),
-                    "items": msgs[:8],
-                })
-            return fallback
+        raw = message.content[0].text.strip()
+        # Strip markdown fences if present
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[1]
+            if raw.endswith("```"):
+                raw = raw[: raw.rfind("```")]
+        categories = json.loads(raw)
+        logger.info(f"AI returned {len(categories)} work categories")
+        return categories
 
     # ------------------------------------------------------------------
     # DOCX generation
@@ -451,6 +438,17 @@ Commits:
                 p2.paragraph_format.space_after = Pt(1)
                 r = p2.add_run(line)
                 r.font.size = Pt(9)
+
+        gstin = bill_to.get("gstin", "").strip()
+        if gstin:
+            pg = left.add_paragraph()
+            pg.paragraph_format.space_before = Pt(2)
+            pg.paragraph_format.space_after = Pt(1)
+            rl = pg.add_run("GSTIN: ")
+            rl.bold = True
+            rl.font.size = Pt(9)
+            rv = pg.add_run(gstin)
+            rv.font.size = Pt(9)
 
         # Right cell – invoice meta
         right = table.cell(0, 1)

@@ -16,6 +16,7 @@ import time
 import logging
 from datetime import datetime
 import calendar
+import requests as http_requests
 
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
 
@@ -375,8 +376,10 @@ def invoice_page():
     now = datetime.now()
     default_start = datetime(now.year, now.month, 1).strftime("%Y-%m-%d")
     default_end = now.strftime("%Y-%m-%d")
+    clients = db.get_clients()
     return render_template("generate_invoice.html",
                            repos=repos,
+                           clients=clients,
                            default_start=default_start,
                            default_end=default_end)
 
@@ -423,10 +426,25 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
 
         # 3. AI categorization (with code stats for accurate hour estimation)
         jobs[job_id]['progress'] = f"AI categorizing {len(all_commits)} commits..."
-        work_details = invoice_gen.categorize_commits(all_commits, repo_labels)
-        jobs[job_id]['log'].append(
-            f"AI returned {len(work_details)} work categories"
-        )
+        try:
+            work_details = invoice_gen.categorize_commits(all_commits, repo_labels)
+            jobs[job_id]['log'].append(f"AI returned {len(work_details)} work categories")
+        except Exception as ai_err:
+            jobs[job_id]['log'].append(f"✗ AI categorization failed: {ai_err}")
+            jobs[job_id]['log'].append("Falling back to per-repo grouping")
+            # Simple fallback: one category per repo with commit messages as items
+            from collections import defaultdict
+            repo_msgs = defaultdict(list)
+            for c in all_commits:
+                repo_msgs[c.get("repo_name", "unknown")].append(c.get("message", ""))
+            work_details = [
+                {
+                    "category": repo_labels.get(repo, repo),
+                    "hours": max(1, len(msgs) // 5),
+                    "items": msgs[:8],
+                }
+                for repo, msgs in repo_msgs.items()
+            ]
 
         # 3. Generate DOCX
         jobs[job_id]['progress'] = 'Generating DOCX invoice...'
@@ -505,6 +523,7 @@ def generate_invoice():
         "name": request.form.get("bill_to_name", "").strip(),
         "address_line1": request.form.get("bill_to_addr1", "").strip(),
         "address_line2": request.form.get("bill_to_addr2", "").strip(),
+        "gstin": request.form.get("bill_to_gstin", "").strip(),
     }
 
     invoice_meta = {
@@ -542,6 +561,111 @@ def download_invoice(filename):
         flash("Invoice file not found.", "error")
         return redirect(url_for("dashboard"))
     return send_file(full_path, as_attachment=True)
+
+
+# ---------------------------------------------------------------------------
+# Client Management
+# ---------------------------------------------------------------------------
+@app.route("/clients")
+def clients_page():
+    db = get_db()
+    clients = db.get_clients()
+    return render_template("clients.html", clients=clients)
+
+
+@app.route("/clients/add", methods=["POST"])
+def add_client():
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("Client name is required.", "error")
+        return redirect(url_for("clients_page"))
+    db = get_db()
+    db.add_client(
+        name=name,
+        address_line1=request.form.get("address_line1", "").strip(),
+        address_line2=request.form.get("address_line2", "").strip(),
+        gstin=request.form.get("gstin", "").strip(),
+        contact=request.form.get("contact", "").strip(),
+    )
+    flash(f"Added client: {name}", "success")
+    return redirect(url_for("clients_page"))
+
+
+@app.route("/clients/update", methods=["POST"])
+def update_client():
+    client_id = request.form.get("client_id")
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("Client name is required.", "error")
+        return redirect(url_for("clients_page"))
+    db = get_db()
+    db.update_client(
+        client_id=int(client_id),
+        name=name,
+        address_line1=request.form.get("address_line1", "").strip(),
+        address_line2=request.form.get("address_line2", "").strip(),
+        gstin=request.form.get("gstin", "").strip(),
+        contact=request.form.get("contact", "").strip(),
+    )
+    flash(f"Updated client: {name}", "success")
+    return redirect(url_for("clients_page"))
+
+
+@app.route("/clients/delete", methods=["POST"])
+def delete_client():
+    client_id = request.form.get("client_id")
+    db = get_db()
+    client = db.get_client(int(client_id))
+    db.delete_client(int(client_id))
+    flash(f"Deleted client: {client['name'] if client else client_id}", "success")
+    return redirect(url_for("clients_page"))
+
+
+@app.route("/api/clients")
+def api_clients():
+    db = get_db()
+    return jsonify(db.get_clients())
+
+
+# ---------------------------------------------------------------------------
+# GitHub API helpers (used by Add Repository modal)
+# ---------------------------------------------------------------------------
+@app.route("/api/github/repos")
+def api_github_repos():
+    q = request.args.get("q", "").strip().lower()
+    try:
+        client = GitHubClient()
+        resp = http_requests.get(
+            f"{client.api_base_url}/user/repos",
+            headers=client.headers,
+            params={"per_page": 100, "sort": "pushed",
+                    "affiliation": "owner,collaborator,organization_member"}
+        )
+        resp.raise_for_status()
+        names = [r["full_name"] for r in resp.json()]
+        if q:
+            names = [n for n in names if q in n.lower()]
+        return jsonify(names[:30])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/github/branches")
+def api_github_branches():
+    repo = request.args.get("repo", "").strip()
+    if not repo:
+        return jsonify([])
+    try:
+        client = GitHubClient()
+        resp = http_requests.get(
+            f"{client.api_base_url}/repos/{repo}/branches",
+            headers=client.headers,
+            params={"per_page": 100}
+        )
+        resp.raise_for_status()
+        return jsonify([b["name"] for b in resp.json()])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

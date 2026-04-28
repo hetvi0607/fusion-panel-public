@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Clients - Commit Tracker{% endblock %}
+
+{% block content %}
+<div class="mb-8 flex items-center justify-between">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">Clients</h1>
+        <p class="mt-1 text-sm text-gray-500">Manage billing clients for invoice generation</p>
+    </div>
+    <button onclick="document.getElementById('add-modal').classList.remove('hidden')"
+            class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
+        <i class="fa-solid fa-plus mr-2"></i> Add Client
+    </button>
+</div>
+
+<!-- Client Table -->
+<div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    {% if clients %}
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Company / Name</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Address</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">GSTIN</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
+                <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200">
+            {% for client in clients %}
+            <tr class="hover:bg-gray-50 transition-colors">
+                <td class="px-6 py-4">
+                    <div class="flex items-center">
+                        <i class="fa-solid fa-building text-gray-400 mr-3 text-base"></i>
+                        <p class="text-sm font-semibold text-gray-900">{{ client.name }}</p>
+                    </div>
+                </td>
+                <td class="px-6 py-4">
+                    <p class="text-sm text-gray-700">{{ client.address_line1 }}</p>
+                    {% if client.address_line2 %}
+                    <p class="text-xs text-gray-500">{{ client.address_line2 }}</p>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4">
+                    {% if client.gstin %}
+                    <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700">{{ client.gstin }}</span>
+                    {% else %}
+                    <span class="text-xs text-gray-400">—</span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4">
+                    <p class="text-sm text-gray-700">{{ client.contact or '—' }}</p>
+                </td>
+                <td class="px-6 py-4 text-right">
+                    <div class="flex items-center justify-end space-x-2">
+                        <button onclick="openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }})"
+                                class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                            <i class="fa-solid fa-pen text-[10px] mr-1"></i> Edit
+                        </button>
+                        <form method="POST" action="/clients/delete" onsubmit="return confirm('Delete {{ client.name }}?');" class="inline">
+                            <input type="hidden" name="client_id" value="{{ client.id }}">
+                            <button type="submit"
+                                    class="inline-flex items-center rounded-md bg-white border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors">
+                                <i class="fa-solid fa-trash text-[10px] mr-1"></i> Delete
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="text-center py-16">
+        <i class="fa-solid fa-building text-gray-300 text-5xl mb-4"></i>
+        <p class="text-gray-500 mb-2">No clients yet.</p>
+        <button onclick="document.getElementById('add-modal').classList.remove('hidden')"
+                class="text-sm font-medium text-indigo-600 hover:text-indigo-500">Add your first client →</button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add Modal -->
+<div id="add-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex min-h-full items-center justify-center p-4">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-50 transition-opacity" onclick="document.getElementById('add-modal').classList.add('hidden')"></div>
+        <div class="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6 z-10">
+            <div class="flex items-center justify-between mb-5">
+                <h3 class="text-lg font-semibold text-gray-900">Add Client</h3>
+                <button onclick="document.getElementById('add-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <form method="POST" action="/clients/add" class="space-y-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Company / Name <span class="text-red-500">*</span></label>
+                    <input type="text" name="name" required placeholder="e.g. Acme Corp"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Address Line 1</label>
+                    <input type="text" name="address_line1" placeholder="e.g. 1255 23rd Street, NW, Suite 450"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Address Line 2</label>
+                    <input type="text" name="address_line2" placeholder="e.g. Washington, DC 20037"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">GSTIN <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="text" name="gstin" placeholder="e.g. 27AAPFU0939F1ZV"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Contact <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="text" name="contact" placeholder="e.g. john@example.com or +1 234 567 8900"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                </div>
+                <div class="flex justify-end space-x-3 pt-2">
+                    <button type="button" onclick="document.getElementById('add-modal').classList.add('hidden')"
+                            class="rounded-lg bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+                    <button type="submit"
+                            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
+                        <i class="fa-solid fa-plus mr-1"></i> Add
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="edit-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex min-h-full items-center justify-center p-4">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-50 transition-opacity" onclick="document.getElementById('edit-modal').classList.add('hidden')"></div>
+        <div class="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6 z-10">
+            <div class="flex items-center justify-between mb-5">
+                <h3 class="text-lg font-semibold text-gray-900">Edit Client</h3>
+                <button onclick="document.getElementById('edit-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <form method="POST" action="/clients/update" class="space-y-3">
+                <input type="hidden" name="client_id" id="edit-client-id">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Company / Name <span class="text-red-500">*</span></label>
+                    <input type="text" name="name" id="edit-name" required
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Address Line 1</label>
+                    <input type="text" name="address_line1" id="edit-addr1"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Address Line 2</label>
+                    <input type="text" name="address_line2" id="edit-addr2"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">GSTIN <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="text" name="gstin" id="edit-gstin"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Contact <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="text" name="contact" id="edit-contact"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                </div>
+                <div class="flex justify-end space-x-3 pt-2">
+                    <button type="button" onclick="document.getElementById('edit-modal').classList.add('hidden')"
+                            class="rounded-lg bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+                    <button type="submit"
+                            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
+                        <i class="fa-solid fa-floppy-disk mr-1"></i> Save
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openEditModal(id, name, addr1, addr2, gstin, contact) {
+    document.getElementById('edit-client-id').value = id;
+    document.getElementById('edit-name').value = name;
+    document.getElementById('edit-addr1').value = addr1;
+    document.getElementById('edit-addr2').value = addr2;
+    document.getElementById('edit-gstin').value = gstin;
+    document.getElementById('edit-contact').value = contact;
+    document.getElementById('edit-modal').classList.remove('hidden');
+}
+</script>
+{% endblock %}

@@ -55,10 +55,24 @@ class RepositoryDB:
         """)
         
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_enabled 
+            CREATE INDEX IF NOT EXISTS idx_enabled
             ON repositories(enabled)
         """)
-        
+
+        # Create clients table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS clients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                address_line1 TEXT DEFAULT '',
+                address_line2 TEXT DEFAULT '',
+                gstin TEXT DEFAULT '',
+                contact TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         conn.commit()
         conn.close()
         logger.info("Database initialized at {}".format(self.db_path))
@@ -290,3 +304,60 @@ class RepositoryDB:
         
         logger.info("Bulk import complete: {} added, {} skipped".format(added, skipped))
         return added, skipped
+
+    # ---------------------------------------------------------------------------
+    # Client management
+    # ---------------------------------------------------------------------------
+
+    def add_client(self, name, address_line1='', address_line2='', gstin='', contact=''):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO clients (name, address_line1, address_line2, gstin, contact)
+            VALUES (?, ?, ?, ?, ?)
+        """, (name, address_line1, address_line2, gstin, contact))
+        conn.commit()
+        client_id = cursor.lastrowid
+        conn.close()
+        return client_id
+
+    def update_client(self, client_id, name, address_line1='', address_line2='', gstin='', contact=''):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE clients
+            SET name=?, address_line1=?, address_line2=?, gstin=?, contact=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+        """, (name, address_line1, address_line2, gstin, contact, client_id))
+        conn.commit()
+        updated = cursor.rowcount > 0
+        conn.close()
+        return updated
+
+    def delete_client(self, client_id):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM clients WHERE id=?", (client_id,))
+        conn.commit()
+        deleted = cursor.rowcount > 0
+        conn.close()
+        return deleted
+
+    def get_clients(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM clients ORDER BY name")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def get_client(self, client_id):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM clients WHERE id=?", (client_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
