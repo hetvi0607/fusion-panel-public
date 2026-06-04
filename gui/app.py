@@ -30,6 +30,7 @@ from src.core.github_client import GitHubClient
 from src.core.csv_reporter import CSVReporter
 from src.core.ai.csv_summarizer import AICsvSummarizer
 from src.core.invoice_generator import InvoiceGenerator
+from src.core.offer_letter_generator import OfferLetterGenerator
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
@@ -50,6 +51,10 @@ def get_reports_dir():
 
 def get_invoices_dir():
     return os.path.join(PROJECT_ROOT, "data", "invoices")
+
+
+def get_offer_letters_dir():
+    return os.path.join(PROJECT_ROOT, "data", "offer_letters")
 
 
 # ---------------------------------------------------------------------------
@@ -561,6 +566,77 @@ def download_invoice(filename):
         flash("Invoice file not found.", "error")
         return redirect(url_for("dashboard"))
     return send_file(full_path, as_attachment=True)
+
+
+# ---------------------------------------------------------------------------
+# Offer Letter Generation
+# ---------------------------------------------------------------------------
+@app.route("/offer-letter", methods=["GET"])
+def offer_letter_page():
+    return render_template("offer_letter.html", form=None)
+
+
+@app.route("/offer-letter", methods=["POST"])
+def generate_offer_letter():
+    form = request.form
+
+    candidate_name = form.get("candidate_name", "").strip()
+    if not candidate_name:
+        flash("Candidate name is required.", "error")
+        return render_template("offer_letter.html", form=form)
+
+    # Parse issue_date from YYYY-MM-DD to "D Month YYYY"
+    issue_date_raw = form.get("issue_date", "")
+    try:
+        parsed_issue = datetime.strptime(issue_date_raw, "%Y-%m-%d")
+        issue_date_str = parsed_issue.strftime("%-d %B %Y")
+    except ValueError:
+        issue_date_str = issue_date_raw
+
+    # Parse start_date from YYYY-MM-DD to "D Month YYYY"
+    start_date_raw = form.get("start_date", "")
+    try:
+        parsed_start = datetime.strptime(start_date_raw, "%Y-%m-%d")
+        start_date_str = parsed_start.strftime("%-d %B %Y")
+    except ValueError:
+        start_date_str = start_date_raw
+
+    data = {
+        "candidate_name": candidate_name,
+        "candidate_email": form.get("candidate_email", "").strip(),
+        "candidate_phone": form.get("candidate_phone", "").strip(),
+        "candidate_college": form.get("candidate_college", "").strip(),
+        "issue_date": issue_date_str,
+        "letter_ref": form.get("letter_ref", "").strip(),
+        "position": form.get("position", "Software Development Intern").strip(),
+        "department": form.get("department", "").strip(),
+        "start_date": start_date_str,
+        "duration": form.get("duration", "").strip(),
+        "mode": form.get("mode", "Remote").strip(),
+        "reporting_manager": form.get("reporting_manager", "").strip(),
+        "working_hours": form.get("working_hours", "Flexible").strip(),
+        "stipend": form.get("stipend", "").strip(),
+        "project_description": form.get("project_description", "").strip(),
+        "extra_terms": form.get("extra_terms", "").strip(),
+    }
+
+    try:
+        generator = OfferLetterGenerator()
+        offer_letters_dir = get_offer_letters_dir()
+        os.makedirs(offer_letters_dir, exist_ok=True)
+
+        safe_name = candidate_name.lower().replace(" ", "_")
+        date_slug = issue_date_raw or datetime.now().strftime("%Y-%m-%d")
+        filename = f"offer_letter_{safe_name}_{date_slug}.docx"
+        output_path = os.path.join(offer_letters_dir, filename)
+
+        generator.generate_offer_letter(data, output_path)
+        logger.info(f"Offer letter generated: {output_path}")
+        return send_file(output_path, as_attachment=True, download_name=filename)
+    except Exception as e:
+        logger.error(f"Error generating offer letter: {e}")
+        flash(f"Error generating offer letter: {e}", "error")
+        return render_template("offer_letter.html", form=form)
 
 
 # ---------------------------------------------------------------------------

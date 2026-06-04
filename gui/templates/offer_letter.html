@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Internship Offer Letter - Commit Tracker{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900">Internship Offer Letter</h1>
+    <p class="mt-1 text-sm text-gray-500">Generate a professional DOCX internship offer letter with Example Company branding</p>
+</div>
+
+<form method="POST" action="/offer-letter" class="space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left Column -->
+        <div class="lg:col-span-1 space-y-6">
+
+            <!-- Candidate Details -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">
+                    <i class="fa-solid fa-user text-purple-500 mr-2"></i>Candidate Details
+                </h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Full Name <span class="text-red-400">*</span></label>
+                        <input type="text" name="candidate_name" required placeholder="e.g. Priya Sharma"
+                               value="{{ form.candidate_name if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email <span class="text-gray-400 font-normal">(optional)</span></label>
+                        <input type="email" name="candidate_email" placeholder="e.g. priya@example.com"
+                               value="{{ form.candidate_email if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone <span class="text-gray-400 font-normal">(optional)</span></label>
+                        <input type="text" name="candidate_phone" placeholder="e.g. +91 98765 43210"
+                               value="{{ form.candidate_phone if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">College / University <span class="text-gray-400 font-normal">(optional)</span></label>
+                        <input type="text" name="candidate_college" placeholder="e.g. Gujarat University"
+                               value="{{ form.candidate_college if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Letter Meta -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">
+                    <i class="fa-solid fa-file-lines text-purple-500 mr-2"></i>Letter Details
+                </h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Issue Date <span class="text-red-400">*</span></label>
+                        <input type="date" name="issue_date" id="issue_date" required
+                               value="{{ form.issue_date if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Reference / Letter No. <span class="text-gray-400 font-normal">(optional)</span></label>
+                        <input type="text" name="letter_ref" placeholder="e.g. FB/INT/2026/001"
+                               value="{{ form.letter_ref if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border font-mono">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit -->
+            <button type="submit"
+                    class="w-full flex items-center justify-center rounded-xl bg-purple-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-purple-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-600 transition-colors">
+                <i class="fa-solid fa-file-arrow-down mr-2"></i> Generate & Download (.docx)
+            </button>
+        </div>
+
+        <!-- Right Column -->
+        <div class="lg:col-span-2 space-y-6">
+
+            <!-- Internship Details -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">
+                    <i class="fa-solid fa-briefcase text-purple-500 mr-2"></i>Internship Details
+                </h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Position / Role <span class="text-red-400">*</span></label>
+                        <input type="text" name="position" required placeholder="e.g. Software Development Intern"
+                               value="{{ form.position if form else 'Software Development Intern' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Department <span class="text-gray-400 font-normal">(optional)</span></label>
+                        <input type="text" name="department" placeholder="e.g. Engineering"
+                               value="{{ form.department if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Start Date <span class="text-red-400">*</span></label>
+                        <input type="date" name="start_date" id="start_date_field" required
+                               value="{{ form.start_date if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Duration <span class="text-red-400">*</span></label>
+                        <input type="text" name="duration" required placeholder="e.g. 3 Months"
+                               value="{{ form.duration if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Mode <span class="text-red-400">*</span></label>
+                        <select name="mode"
+                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                            <option value="Remote" {% if not form or form.mode == 'Remote' %}selected{% endif %}>Remote</option>
+                            <option value="On-site" {% if form and form.mode == 'On-site' %}selected{% endif %}>On-site</option>
+                            <option value="Hybrid" {% if form and form.mode == 'Hybrid' %}selected{% endif %}>Hybrid</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Reporting Manager <span class="text-red-400">*</span></label>
+                        <input type="text" name="reporting_manager" required placeholder="e.g. Khushali"
+                               value="{{ form.reporting_manager if form else '' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Working Hours</label>
+                        <input type="text" name="working_hours" placeholder="e.g. Flexible"
+                               value="{{ form.working_hours if form else 'Flexible' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Stipend</label>
+                        <input type="text" name="stipend" placeholder="e.g. Unpaid Internship (Learning & Project Experience Based)"
+                               value="{{ form.stipend if form else 'Unpaid Internship (Learning & Project Experience Based)' }}"
+                               class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Project Description -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-1">
+                    <i class="fa-solid fa-pen-to-square text-purple-500 mr-2"></i>Project / Work Description
+                </h2>
+                <p class="text-xs text-gray-500 mb-3">This paragraph appears in the offer letter after the opening line. Describe the project(s) the intern will work on.</p>
+                <textarea name="project_description" rows="5"
+                          placeholder="e.g. During the internship, you will have the opportunity to work on real-world software and AI projects under the guidance of our team. Your primary area of contribution will initially be the Innovatrix project, an AI-powered presentation and interactive avatar platform currently under active development."
+                          class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border resize-y">{{ form.project_description if form else '' }}</textarea>
+            </div>
+
+            <!-- Extra Terms -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-1">
+                    <i class="fa-solid fa-file-contract text-purple-500 mr-2"></i>Additional Terms / Conditions
+                    <span class="text-gray-400 font-normal text-xs ml-1">(optional)</span>
+                </h2>
+                <p class="text-xs text-gray-500 mb-3">Any special terms, NDA clauses, or conditions to include in the letter. Leave blank if not needed.</p>
+                <textarea name="extra_terms" rows="3"
+                          placeholder="e.g. The intern must not share any project-related code on public repositories during the internship period."
+                          class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 text-sm px-3 py-2 border resize-y">{{ form.extra_terms if form else '' }}</textarea>
+            </div>
+
+            <!-- Info Box -->
+            <div class="bg-purple-50 border border-purple-200 rounded-xl p-5">
+                <h3 class="text-sm font-semibold text-purple-800 mb-2"><i class="fa-solid fa-circle-info mr-1.5"></i>What's included in the letter</h3>
+                <ul class="text-xs text-purple-700 space-y-1 list-disc list-inside">
+                    <li>Example Company company header with Firm Reg. No. and Professional Tax No.</li>
+                    <li>Candidate addressee block and subject line</li>
+                    <li>Internship details table (position, dates, mode, stipend, etc.)</li>
+                    <li>Key responsibilities, confidentiality clause, nature of internship</li>
+                    <li>Certificate of completion and acceptance section</li>
+                    <li>Signed off by Example Owner, Founder, Example Company</li>
+                </ul>
+            </div>
+
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function pad(n) { return n < 10 ? '0' + n : n; }
+const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+document.addEventListener('DOMContentLoaded', function () {
+    const issueDateInput = document.getElementById('issue_date');
+    if (!issueDateInput.value) {
+        const now = new Date();
+        issueDateInput.value = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+    }
+});
+</script>
+{% endblock %}
