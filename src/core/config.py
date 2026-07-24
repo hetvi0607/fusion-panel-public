@@ -18,6 +18,12 @@ class Config:
     # Claude API credentials
     CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
     CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+    CLAUDE_INPUT_COST_PER_MILLION = float(
+        os.getenv("CLAUDE_INPUT_COST_PER_MILLION", 3.0)
+    )
+    CLAUDE_OUTPUT_COST_PER_MILLION = float(
+        os.getenv("CLAUDE_OUTPUT_COST_PER_MILLION", 15.0)
+    )
     
     # Google Sheets API credentials (optional)
     GOOGLE_CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")

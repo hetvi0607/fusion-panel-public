@@ -197,7 +197,7 @@ class SimpleAiAnalyzer:
                 try:
                     response = self.client.messages.create(
                         model=self.model,
-                        max_tokens=1000,
+                        max_tokens=min(1000, app_config.AI_MAX_TOKENS),
                         system="You are an expert code reviewer analyzing GitHub commits.",
                         messages=[{"role": "user", "content": prompt}]
                     )
@@ -220,7 +220,10 @@ class SimpleAiAnalyzer:
                     response = self.client.completion(
                         prompt=f"\n\nHuman: {prompt}\n\nAssistant:",
                         model=self.model,
-                        max_tokens_to_sample=1000,
+                        max_tokens_to_sample=min(
+                            1000,
+                            app_config.AI_MAX_TOKENS,
+                        ),
                     )
                     response_text = response.completion
                 except Exception as e:

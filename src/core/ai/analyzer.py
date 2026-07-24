@@ -232,7 +232,7 @@ CHANGE_TYPE: [Single category from the list]
                 try:
                     response = self.client.messages.create(
                         model=self.model,
-                        max_tokens=1000,
+                        max_tokens=min(1000, app_config.AI_MAX_TOKENS),
                         system=system_prompt,
                         messages=[{"role": "user", "content": prompt}]
                     )
@@ -279,7 +279,10 @@ CHANGE_TYPE: [Single category from the list]
                     response = self.client.completion(
                         prompt=f"\n\nHuman: {prompt}\n\nAssistant:",
                         model=self.model,
-                        max_tokens_to_sample=1000,
+                        max_tokens_to_sample=min(
+                            1000,
+                            app_config.AI_MAX_TOKENS,
+                        ),
                     )
                     
                     # Extract response text - old format is simpler

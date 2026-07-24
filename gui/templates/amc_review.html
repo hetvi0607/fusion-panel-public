@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Review AMC - Example Company{% endblock %}
+
+{% block content %}
+<div class="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div class="flex items-start gap-3">
+        <a href="/amc" class="mt-1 text-gray-400 hover:text-gray-600"><i class="fa-solid fa-arrow-left"></i></a>
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Review AMC Draft</h1>
+            <p class="mt-1 text-sm text-gray-500">
+                {{ client.name }} ·
+                {% if contract.input_data.facts.maintenance_items %}
+                {{ contract.input_data.facts.maintenance_items|map(attribute='asset_name')|join(', ') }}
+                {% else %}
+                {{ contract.input_data.facts.asset_name }}
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    <div class="flex items-center gap-3 text-xs text-gray-500">
+        <span class="rounded-full bg-gray-100 px-3 py-1">Model: {{ contract.model }}</span>
+        <span class="rounded-full bg-gray-100 px-3 py-1">Tokens: {{ contract.input_tokens + contract.output_tokens }}</span>
+        <span class="rounded-full bg-gray-100 px-3 py-1">Cost: ${{ '%.4f'|format(contract.estimated_cost) }}</span>
+    </div>
+</div>
+
+<form method="POST" id="draft-form" class="space-y-6">
+    <input type="hidden" name="service_level_count" value="{{ contract.draft.service_levels|length }}">
+    <input type="hidden" name="clause_count" value="{{ contract.draft.clauses|length }}">
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div class="xl:col-span-2 space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center justify-between gap-4 mb-5">
+                    <h2 class="text-base font-semibold text-gray-900">
+                        <i class="fa-solid fa-file-contract text-teal-600 mr-2"></i>Contract Opening
+                    </h2>
+                    <span class="rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700">Editable</span>
+                </div>
+                <div class="space-y-4">
+                    <div>
+                        <label class="label">Title</label>
+                        <input name="title" value="{{ contract.draft.title }}" required class="field font-semibold">
+                    </div>
+                    <div>
+                        <label class="label">Opening</label>
+                        <textarea name="opening" rows="4" required class="field">{{ contract.draft.opening }}</textarea>
+                    </div>
+                    <div>
+                        <label class="label">Agreement Overview</label>
+                        <textarea name="overview" rows="4" required class="field">{{ contract.draft.overview }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h2 class="text-base font-semibold text-gray-900 mb-2">Services Included</h2>
+                    <p class="text-xs text-gray-500 mb-3">One item per line.</p>
+                    <textarea name="scope_included" rows="10" required class="field">{{ contract.draft.scope_included|join('\n') }}</textarea>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h2 class="text-base font-semibold text-gray-900 mb-2">Services Excluded</h2>
+                    <p class="text-xs text-gray-500 mb-3">One item per line.</p>
+                    <textarea name="scope_excluded" rows="10" class="field">{{ contract.draft.scope_excluded|join('\n') }}</textarea>
+                </div>
+            </div>
+
+            {% if contract.draft.service_levels %}
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-base font-semibold text-gray-900 mb-4">Service Levels</h2>
+                <div class="space-y-3">
+                    {% for item in contract.draft.service_levels %}
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3 rounded-lg border border-gray-200 p-3">
+                        <input name="service_{{ loop.index0 }}" value="{{ item.service }}" class="field md:col-span-2 font-medium">
+                        <textarea name="commitment_{{ loop.index0 }}" rows="2" class="field md:col-span-3">{{ item.commitment }}</textarea>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="mb-5">
+                    <h2 class="text-base font-semibold text-gray-900">Contract Clauses</h2>
+                    <p class="text-xs text-gray-500 mt-1">Claude created structured clauses so each section can be reviewed independently.</p>
+                </div>
+                <div class="space-y-5">
+                    {% for clause in contract.draft.clauses %}
+                    <div class="rounded-lg border border-gray-200 p-4">
+                        <input name="clause_heading_{{ loop.index0 }}" value="{{ clause.heading }}" required class="field font-semibold mb-3">
+                        <textarea name="clause_body_{{ loop.index0 }}" rows="6" required class="field">{{ clause.body }}</textarea>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-6">
+            <div class="bg-gray-900 text-white rounded-xl p-5 shadow-sm">
+                <h2 class="text-sm font-semibold mb-4">
+                    <i class="fa-solid fa-lock mr-2 text-teal-300"></i>Locked Commercial Facts
+                </h2>
+                <dl class="space-y-3 text-xs">
+                    <div><dt class="text-gray-400">Client</dt><dd class="font-medium mt-0.5">{{ client.name }}</dd></div>
+                    <div>
+                        <dt class="text-gray-400">Maintenance Items</dt>
+                        <dd class="mt-1 space-y-2">
+                            {% if contract.input_data.facts.maintenance_items %}
+                            {% for item in contract.input_data.facts.maintenance_items %}
+                            <div class="rounded bg-gray-800 px-2.5 py-2">
+                                <p class="font-medium">{{ item.asset_name }}</p>
+                                <p class="mt-0.5 text-gray-400">{{ item.service_type }}{% if item.asset_url %} · {{ item.asset_url }}{% endif %}</p>
+                            </div>
+                            {% endfor %}
+                            {% else %}
+                            <div class="font-medium">{{ contract.input_data.facts.asset_name }}</div>
+                            {% endif %}
+                        </dd>
+                    </div>
+                    <div><dt class="text-gray-400">Term</dt><dd class="font-medium mt-0.5">{{ contract.input_data.facts.effective_date_display }} – {{ contract.input_data.facts.end_date_display }}</dd></div>
+                    <div><dt class="text-gray-400">Annual Fee</dt><dd class="font-medium mt-0.5">{{ contract.input_data.facts.currency }} {{ contract.input_data.facts.annual_fee }}</dd></div>
+                    <div><dt class="text-gray-400">Reference</dt><dd class="font-medium mt-0.5">{{ contract.input_data.facts.contract_reference }}</dd></div>
+                </dl>
+            </div>
+
+            <div class="rounded-xl border border-purple-200 bg-purple-50 p-5">
+                <h2 class="text-sm font-semibold text-purple-900 mb-2">
+                    <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>Revise with Claude
+                </h2>
+                <p class="text-xs text-purple-700 mb-3">Your current edits are included. Locked facts cannot be changed by the AI.</p>
+                <textarea name="revision_instruction" rows="4"
+                          placeholder="e.g. Make the scope more specific and change the initial response commitment to one business day."
+                          class="field bg-white"></textarea>
+                <button type="submit" formaction="/amc/{{ contract.id }}/revise"
+                        class="mt-3 w-full rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-purple-500">
+                    Apply AI Revision
+                </button>
+            </div>
+
+            <div class="rounded-xl border border-amber-200 bg-amber-50 p-5 space-y-5">
+                <div class="rounded-lg border border-amber-200 bg-white/70 p-4">
+                    <h2 class="text-sm font-semibold text-amber-950">
+                        <i class="fa-solid fa-list-check mr-2"></i>How to use these AI review notes
+                    </h2>
+                    <p class="mt-1 text-xs text-amber-800">
+                        These notes are for your review only and are never included in the exported DOCX.
+                    </p>
+                    <ol class="mt-3 list-decimal space-y-1.5 pl-4 text-xs text-amber-900">
+                        <li>Decide the unanswered business facts below.</li>
+                        <li>Enter your answers in <strong>Revise with Claude</strong> and apply the revision.</li>
+                        <li>Check that the contract wording changed correctly, then delete resolved notes.</li>
+                    </ol>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 class="text-sm font-semibold text-amber-900">Needs Your Decision</h2>
+                        <span class="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-red-700">Action required</span>
+                    </div>
+                    <p class="text-xs text-amber-700 mt-1">Questions Claude could not answer from the information provided.</p>
+                    <textarea name="needs_confirmation" rows="5" class="field mt-2 bg-white">{{ contract.draft.needs_confirmation|join('\n') }}</textarea>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 class="text-sm font-semibold text-amber-900">Risk Warnings</h2>
+                        <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700">Advisory</span>
+                    </div>
+                    <p class="text-xs text-amber-700 mt-1">Potential commercial or legal concerns. Change the draft when relevant; otherwise acknowledge them during final review.</p>
+                    <textarea name="risk_flags" rows="5" class="field mt-2 bg-white">{{ contract.draft.risk_flags|join('\n') }}</textarea>
+                </div>
+                <div>
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 class="text-sm font-semibold text-amber-900">Possible Contradictions</h2>
+                        <span class="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-purple-700">Fix if present</span>
+                    </div>
+                    <p class="text-xs text-amber-700 mt-1">Internal quality checks where the draft may have expanded or contradicted the locked facts.</p>
+                    <textarea name="consistency_notes" rows="4" class="field mt-2 bg-white">{{ contract.draft.consistency_notes|join('\n') }}</textarea>
+                </div>
+            </div>
+
+            <div class="rounded-xl border border-blue-200 bg-blue-50 p-5">
+                <div class="flex items-center justify-between gap-3">
+                    <h2 class="text-sm font-semibold text-blue-900">AI Assumptions</h2>
+                    <span class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-blue-700">Verify only</span>
+                </div>
+                <p class="mt-1 text-xs text-blue-700">
+                    Background facts Claude assumed while drafting. They are not exported. If one is wrong, give the correct fact through <strong>Revise with Claude</strong>.
+                </p>
+                <textarea name="assumptions" rows="6" class="field mt-2 bg-white">{{ contract.draft.assumptions|join('\n') }}</textarea>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-3">
+                <button type="submit" formaction="/amc/{{ contract.id }}/save"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                    <i class="fa-solid fa-floppy-disk mr-2"></i>Save Draft
+                </button>
+                <label class="flex items-start rounded-lg bg-gray-50 p-3 text-xs text-gray-700">
+                    <input type="checkbox" name="confirm_review" class="mt-0.5 h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                    <span class="ml-2">I reviewed the AI-generated wording, assumptions and commercial facts.</span>
+                </label>
+                <button type="submit" formaction="/amc/{{ contract.id }}/export"
+                        class="w-full rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-500">
+                    <i class="fa-solid fa-file-word mr-2"></i>Approve & Download DOCX
+                </button>
+                {% if contract.output_filename %}
+                <a href="/amc/download/{{ contract.output_filename }}"
+                   class="block w-full text-center rounded-lg border border-teal-200 px-4 py-2.5 text-sm font-semibold text-teal-700 hover:bg-teal-50">
+                    Download Last Export
+                </a>
+                {% endif %}
+            </div>
+
+            {% if revisions %}
+            <details class="bg-white rounded-xl shadow-sm border border-gray-200">
+                <summary class="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-900">Revision History ({{ revisions|length }})</summary>
+                <div class="border-t border-gray-200 divide-y divide-gray-100">
+                    {% for revision in revisions[:8] %}
+                    <div class="px-5 py-3">
+                        <p class="text-xs font-medium text-gray-700">Revision {{ revision.revision_no }}</p>
+                        <p class="text-xs text-gray-500 mt-1">{{ revision.instruction or 'Saved draft' }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block head %}
+<style>
+.label { display:block; margin-bottom:.25rem; font-size:.875rem; font-weight:500; color:#374151; }
+.field { display:block; width:100%; border:1px solid #d1d5db; border-radius:.5rem; padding:.5rem .75rem; font-size:.875rem; color:#111827; }
+.field:focus { outline:none; border-color:#14b8a6; box-shadow:0 0 0 1px #14b8a6; }
+</style>
+{% endblock %}

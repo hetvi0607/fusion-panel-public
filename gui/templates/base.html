@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}GitHub Commit Tracker{% endblock %}</title>
+    <title>{% block title %}Example Company{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
@@ -16,13 +16,12 @@
         <!-- Navigation -->
         <nav class="bg-gray-900 shadow-lg">
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div class="flex h-16 items-center justify-between">
-                    <div class="flex items-center">
-                        <a href="/" class="flex items-center space-x-3">
-                            <i class="fa-brands fa-github text-white text-2xl"></i>
-                            <span class="text-white font-bold text-lg">Commit Tracker</span>
+                <div class="flex min-h-16 items-center py-2">
+                    <div class="flex w-full flex-col gap-2 2xl:flex-row 2xl:items-center">
+                        <a href="/" class="flex shrink-0 items-center">
+                            <span class="text-white font-bold text-lg">Example Company</span>
                         </a>
-                        <div class="ml-10 flex items-baseline space-x-1">
+                        <div class="flex min-w-0 w-full flex-wrap items-baseline gap-1 2xl:ml-4 2xl:flex-1">
                             <a href="/"
                                class="nav-link rounded-md px-3 py-2 text-sm font-medium
                                {% if request.path == '/' %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
@@ -43,15 +42,10 @@
                                {% if '/offer-letter' in request.path %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
                                 <i class="fa-solid fa-file-signature mr-1"></i> Offer Letter
                             </a>
-                            <a href="/repos"
+                            <a href="/amc"
                                class="nav-link rounded-md px-3 py-2 text-sm font-medium
-                               {% if '/repos' in request.path %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
-                                <i class="fa-solid fa-code-branch mr-1"></i> Repositories
-                            </a>
-                            <a href="/clients"
-                               class="nav-link rounded-md px-3 py-2 text-sm font-medium
-                               {% if '/clients' in request.path %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
-                                <i class="fa-solid fa-building mr-1"></i> Clients
+                               {% if '/amc' in request.path or ('/job' in request.path and 'amc_' in request.path) %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                <i class="fa-solid fa-file-contract mr-1"></i> AMC
                             </a>
                             <a href="/reports"
                                class="nav-link rounded-md px-3 py-2 text-sm font-medium
@@ -60,7 +54,7 @@
                             </a>
                             <a href="/settings"
                                class="nav-link rounded-md px-3 py-2 text-sm font-medium
-                               {% if '/settings' in request.path %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                               {% if request.path.startswith('/settings') %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
                                 <i class="fa-solid fa-gear mr-1"></i> Settings
                             </a>
                         </div>

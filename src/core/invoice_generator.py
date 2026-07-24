@@ -183,8 +183,12 @@ DEFAULT_FOOTER = {
 class InvoiceGenerator:
     """Generates DOCX invoices from GitHub commit data with AI categorization."""
 
-    def __init__(self):
-        self.client = anthropic.Anthropic(api_key=app_config.CLAUDE_API_KEY)
+    def __init__(self, enable_ai: bool = True):
+        self.client = None
+        if enable_ai:
+            if not app_config.CLAUDE_API_KEY:
+                raise ValueError("Claude API key is required for AI categorization")
+            self.client = anthropic.Anthropic(api_key=app_config.CLAUDE_API_KEY)
         self.model = app_config.CLAUDE_MODEL
         self.total_input_tokens = 0
         self.total_output_tokens = 0
@@ -213,6 +217,9 @@ class InvoiceGenerator:
                 hours     – estimated hours (int)
                 items     – list of bullet-point strings
         """
+        if self.client is None:
+            raise RuntimeError("AI categorization is disabled")
+
         # Build a detailed commit listing grouped by repo, including code stats
         repo_commits: Dict[str, list] = {}
         repo_totals: Dict[str, Dict] = {}
@@ -239,7 +246,7 @@ class InvoiceGenerator:
             t = repo_totals[repo]
             listing += f"\n## {label} ({repo})\n"
             listing += f"Summary: {t['commits']} commits, +{t['add']} additions, -{t['del']} deletions, {t['files']} file changes\n"
-            for e in entries[:80]:  # cap per repo
+            for e in entries[:app_config.BATCH_SIZE]:
                 stat_str = f" [+{e['add']} -{e['del']}, {e['files']} files]" if e['add'] or e['del'] else ""
                 listing += f"- {e['msg']}{stat_str}\n"
 
@@ -266,7 +273,7 @@ Commits:
 """
         message = self.client.messages.create(
             model=self.model,
-            max_tokens=2000,
+            max_tokens=min(2000, app_config.AI_MAX_TOKENS),
             messages=[{"role": "user", "content": prompt}],
         )
         self.total_input_tokens += message.usage.input_tokens
@@ -673,11 +680,11 @@ Commits:
 
     def get_usage_stats(self) -> Dict[str, Any]:
         """Return token usage statistics."""
-        input_cost_per_1k = 0.003
-        output_cost_per_1k = 0.015
         estimated_cost = (
-            (self.total_input_tokens / 1000) * input_cost_per_1k
-            + (self.total_output_tokens / 1000) * output_cost_per_1k
+            (self.total_input_tokens / 1_000_000)
+            * app_config.CLAUDE_INPUT_COST_PER_MILLION
+            + (self.total_output_tokens / 1_000_000)
+            * app_config.CLAUDE_OUTPUT_COST_PER_MILLION
         )
         return {
             "input_tokens": self.total_input_tokens,

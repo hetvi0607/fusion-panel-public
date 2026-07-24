@@ -14,9 +14,12 @@ import json
 import threading
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import calendar
 import requests as http_requests
+from dateutil.relativedelta import relativedelta
+from werkzeug.utils import secure_filename
 
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
 
@@ -31,6 +34,8 @@ from src.core.csv_reporter import CSVReporter
 from src.core.ai.csv_summarizer import AICsvSummarizer
 from src.core.invoice_generator import InvoiceGenerator
 from src.core.offer_letter_generator import OfferLetterGenerator
+from src.core.amc_ai_generator import AmcAiGenerator, PROMPT_VERSION, validate_amc_draft
+from src.core.amc_document_generator import AmcDocumentGenerator
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.urandom(24)
@@ -55,6 +60,151 @@ def get_invoices_dir():
 
 def get_offer_letters_dir():
     return os.path.join(PROJECT_ROOT, "data", "offer_letters")
+
+
+def get_amc_contracts_dir():
+    return os.path.join(PROJECT_ROOT, "data", "amc_contracts")
+
+
+RUNTIME_SETTING_KEYS = (
+    "GITHUB_TOKEN",
+    "CLAUDE_API_KEY",
+    "CLAUDE_MODEL",
+    "AI_ENABLED",
+    "AI_BUDGET_LIMIT",
+    "AI_MAX_TOKENS",
+    "PARALLEL_PROCESSING",
+    "MAX_WORKERS",
+    "BATCH_SIZE",
+    "LOG_LEVEL",
+)
+
+
+def _runtime_setting_defaults():
+    return {
+        key: getattr(app_config, key)
+        for key in RUNTIME_SETTING_KEYS
+    }
+
+
+def _apply_runtime_settings(settings):
+    """Apply validated settings to new work without restarting Flask."""
+    for key in RUNTIME_SETTING_KEYS:
+        if key in settings:
+            setattr(app_config, key, settings[key])
+    logging.getLogger().setLevel(
+        getattr(logging, app_config.LOG_LEVEL, logging.INFO)
+    )
+
+
+def _load_saved_runtime_settings():
+    stored = get_db().get_runtime_settings(_runtime_setting_defaults())
+    _apply_runtime_settings(stored)
+
+
+def _masked_secret(value):
+    value = str(value or "")
+    return f"••••{value[-4:]}" if value else "Not configured"
+
+
+def _ai_availability(db):
+    """Return whether a new AI operation is allowed and a useful reason."""
+    if not app_config.AI_ENABLED:
+        return False, "AI is disabled in Settings."
+    if not app_config.CLAUDE_API_KEY:
+        return False, "Claude API key is not configured."
+    usage = db.get_monthly_ai_usage()
+    limit = float(app_config.AI_BUDGET_LIMIT or 0)
+    if limit > 0 and float(usage["estimated_cost"]) >= limit:
+        return (
+            False,
+            f"Monthly AI budget of ${limit:.2f} has been reached.",
+        )
+    return True, ""
+
+
+def _record_ai_usage(db, feature, usage):
+    db.record_ai_usage(
+        feature,
+        input_tokens=usage.get("input_tokens", 0),
+        output_tokens=usage.get("output_tokens", 0),
+        estimated_cost=usage.get("estimated_cost", 0),
+    )
+
+
+def _fetch_selected_commits(
+    *,
+    job,
+    github_client,
+    selected_repos,
+    start_date,
+    end_date,
+):
+    """Fetch repositories sequentially or concurrently using live settings."""
+    all_commits = []
+
+    def fetch_one(repo_config):
+        repo_name = repo_config["repo"]
+        branch = repo_config.get("branch")
+        commits = github_client.fetch_commits(
+            repo_name,
+            start_date,
+            end_date,
+            branch=branch,
+        )
+        return repo_name, branch, commits
+
+    parallel = (
+        app_config.PARALLEL_PROCESSING
+        and len(selected_repos) > 1
+        and app_config.MAX_WORKERS > 1
+    )
+    if parallel:
+        workers = min(app_config.MAX_WORKERS, len(selected_repos))
+        job["log"].append(f"Parallel repository fetching: {workers} workers")
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(fetch_one, repo): repo
+                for repo in selected_repos
+            }
+            for index, future in enumerate(as_completed(futures), 1):
+                repo = futures[future]
+                repo_name = repo["repo"]
+                branch = repo.get("branch")
+                branch_info = f" ({branch})" if branch else ""
+                job["progress"] = (
+                    f"Fetched {index}/{len(selected_repos)} repositories"
+                )
+                try:
+                    _, _, commits = future.result()
+                    all_commits.extend(commits)
+                    job["log"].append(
+                        f"✓ {repo_name}{branch_info}: {len(commits)} commits"
+                    )
+                except Exception as exc:
+                    job["log"].append(f"✗ {repo_name}{branch_info}: {exc}")
+        return all_commits
+
+    for index, repo in enumerate(selected_repos, 1):
+        repo_name = repo["repo"]
+        branch = repo.get("branch")
+        branch_info = f" ({branch})" if branch else ""
+        job["progress"] = (
+            f"Fetching {repo_name}{branch_info} "
+            f"({index}/{len(selected_repos)})"
+        )
+        try:
+            _, _, commits = fetch_one(repo)
+            all_commits.extend(commits)
+            job["log"].append(
+                f"✓ {repo_name}{branch_info}: {len(commits)} commits"
+            )
+        except Exception as exc:
+            job["log"].append(f"✗ {repo_name}{branch_info}: {exc}")
+    return all_commits
+
+
+_load_saved_runtime_settings()
 
 
 # ---------------------------------------------------------------------------
@@ -114,29 +264,30 @@ def run_report_job(job_id, start_date, end_date, use_ai, selected_repos):
     jobs[job_id]['status'] = 'running'
     jobs[job_id]['progress'] = 'Initializing...'
     try:
+        db = get_db()
         github_client = GitHubClient()
-        
+
         ai_summarizer = None
         if use_ai:
-            try:
-                ai_summarizer = AICsvSummarizer()
-                jobs[job_id]['progress'] = 'AI summarizer ready'
-            except Exception as e:
-                jobs[job_id]['log'].append(f"AI init failed: {e}")
+            allowed, reason = _ai_availability(db)
+            if not allowed:
+                jobs[job_id]['log'].append(f"AI skipped: {reason}")
                 use_ai = False
+            else:
+                try:
+                    ai_summarizer = AICsvSummarizer()
+                    jobs[job_id]['progress'] = 'AI summarizer ready'
+                except Exception as e:
+                    jobs[job_id]['log'].append(f"AI init failed: {e}")
+                    use_ai = False
 
-        all_commits = []
-        for i, repo_config in enumerate(selected_repos):
-            repo_name = repo_config['repo']
-            branch = repo_config.get('branch')
-            branch_info = f" ({branch})" if branch else ""
-            jobs[job_id]['progress'] = f"Fetching {repo_name}{branch_info} ({i+1}/{len(selected_repos)})"
-            try:
-                commits = github_client.fetch_commits(repo_name, start_date, end_date, branch=branch)
-                all_commits.extend(commits)
-                jobs[job_id]['log'].append(f"✓ {repo_name}{branch_info}: {len(commits)} commits")
-            except Exception as e:
-                jobs[job_id]['log'].append(f"✗ {repo_name}{branch_info}: {e}")
+        all_commits = _fetch_selected_commits(
+            job=jobs[job_id],
+            github_client=github_client,
+            selected_repos=selected_repos,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         if not all_commits:
             jobs[job_id]['status'] = 'done'
@@ -177,6 +328,7 @@ def run_report_job(job_id, start_date, end_date, use_ai, selected_repos):
                     report_path, repo_summaries, overall_summary, f"{start_date} to {end_date}"
                 )
                 usage = ai_summarizer.get_usage_stats()
+                _record_ai_usage(db, "report_summary", usage)
                 jobs[job_id]['log'].append(
                     f"AI summary done – cost: ${usage['estimated_cost']:.4f}, tokens: {usage['total_tokens']}"
                 )
@@ -201,7 +353,10 @@ def run_report_job(job_id, start_date, end_date, use_ai, selected_repos):
 def generate_report():
     start_date = request.form.get("start_date")
     end_date = request.form.get("end_date")
-    use_ai = request.form.get("use_ai") == "on"
+    use_ai = (
+        request.form.get("use_ai") == "on"
+        and app_config.AI_ENABLED
+    )
     selected_repo_ids = request.form.getlist("repos")
 
     db = get_db()
@@ -252,13 +407,19 @@ def job_status_api(job_id):
 # ---------------------------------------------------------------------------
 # Repository Management
 # ---------------------------------------------------------------------------
-@app.route("/repos")
+@app.route("/settings/repositories")
 def repos_page():
     db = get_db()
     repos = db.get_repositories(enabled_only=False)
     return render_template("repos.html", repos=repos)
 
 
+@app.route("/repos")
+def legacy_repos_page():
+    return redirect(url_for("repos_page"))
+
+
+@app.route("/settings/repositories/add", methods=["POST"])
 @app.route("/repos/add", methods=["POST"])
 def add_repo():
     repo_name = request.form.get("repo_name", "").strip()
@@ -279,6 +440,7 @@ def add_repo():
     return redirect(url_for("repos_page"))
 
 
+@app.route("/settings/repositories/update", methods=["POST"])
 @app.route("/repos/update", methods=["POST"])
 def update_repo():
     repo_name = request.form.get("repo_name")
@@ -292,6 +454,7 @@ def update_repo():
     return redirect(url_for("repos_page"))
 
 
+@app.route("/settings/repositories/delete", methods=["POST"])
 @app.route("/repos/delete", methods=["POST"])
 def delete_repo():
     repo_name = request.form.get("repo_name")
@@ -395,22 +558,21 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
     jobs[job_id]['status'] = 'running'
     jobs[job_id]['progress'] = 'Initializing...'
     try:
+        db = get_db()
         github_client = GitHubClient()
-        invoice_gen = InvoiceGenerator()
+        ai_allowed, ai_reason = _ai_availability(db)
+        invoice_gen = InvoiceGenerator(enable_ai=ai_allowed)
+        if not ai_allowed:
+            jobs[job_id]['log'].append(f"AI categorization skipped: {ai_reason}")
 
         # 1. Fetch commits
-        all_commits = []
-        for i, repo_config in enumerate(selected_repos):
-            repo_name = repo_config['repo']
-            branch = repo_config.get('branch')
-            branch_info = f" ({branch})" if branch else ""
-            jobs[job_id]['progress'] = f"Fetching {repo_name}{branch_info} ({i+1}/{len(selected_repos)})"
-            try:
-                commits = github_client.fetch_commits(repo_name, start_date, end_date, branch=branch)
-                all_commits.extend(commits)
-                jobs[job_id]['log'].append(f"\u2713 {repo_name}{branch_info}: {len(commits)} commits")
-            except Exception as e:
-                jobs[job_id]['log'].append(f"\u2717 {repo_name}{branch_info}: {e}")
+        all_commits = _fetch_selected_commits(
+            job=jobs[job_id],
+            github_client=github_client,
+            selected_repos=selected_repos,
+            start_date=start_date,
+            end_date=end_date,
+        )
 
         if not all_commits:
             jobs[job_id]['status'] = 'done'
@@ -430,13 +592,28 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
         )
 
         # 3. AI categorization (with code stats for accurate hour estimation)
-        jobs[job_id]['progress'] = f"AI categorizing {len(all_commits)} commits..."
-        try:
-            work_details = invoice_gen.categorize_commits(all_commits, repo_labels)
-            jobs[job_id]['log'].append(f"AI returned {len(work_details)} work categories")
-        except Exception as ai_err:
-            jobs[job_id]['log'].append(f"✗ AI categorization failed: {ai_err}")
-            jobs[job_id]['log'].append("Falling back to per-repo grouping")
+        if ai_allowed:
+            jobs[job_id]['progress'] = (
+                f"AI categorizing {len(all_commits)} commits..."
+            )
+            try:
+                work_details = invoice_gen.categorize_commits(
+                    all_commits,
+                    repo_labels,
+                )
+                jobs[job_id]['log'].append(
+                    f"AI returned {len(work_details)} work categories"
+                )
+            except Exception as ai_err:
+                jobs[job_id]['log'].append(
+                    f"✗ AI categorization failed: {ai_err}"
+                )
+                jobs[job_id]['log'].append(
+                    "Falling back to per-repo grouping"
+                )
+                ai_allowed = False
+
+        if not ai_allowed:
             # Simple fallback: one category per repo with commit messages as items
             from collections import defaultdict
             repo_msgs = defaultdict(list)
@@ -469,6 +646,8 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
         )
 
         usage = invoice_gen.get_usage_stats()
+        if usage["total_tokens"]:
+            _record_ai_usage(db, "invoice_categorization", usage)
         jobs[job_id]['log'].append(
             f"Invoice generated \u2013 cost: ${usage['estimated_cost']:.4f}, tokens: {usage['total_tokens']}"
         )
@@ -640,15 +819,505 @@ def generate_offer_letter():
 
 
 # ---------------------------------------------------------------------------
+# AI-first Annual Maintenance Contracts
+# ---------------------------------------------------------------------------
+def _display_date(value):
+    return value.strftime("%d %B %Y").lstrip("0")
+
+
+def _split_nonempty_lines(value):
+    return [line.strip() for line in (value or "").splitlines() if line.strip()]
+
+
+def _maintenance_items_from_form(form):
+    """Parse and validate repeatable AMC maintenance items."""
+    try:
+        item_count = int(form.get("maintenance_item_count", "0") or 0)
+    except (TypeError, ValueError):
+        item_count = 0
+    item_count = min(max(item_count, 0), 20)
+
+    items = []
+    for index in range(item_count):
+        service_type = form.get(
+            f"maintenance_type_{index}",
+            "",
+        ).strip()
+        asset_name = form.get(
+            f"maintenance_name_{index}",
+            "",
+        ).strip()
+        asset_url = form.get(
+            f"maintenance_url_{index}",
+            "",
+        ).strip()
+        if not service_type and not asset_name and not asset_url:
+            continue
+        if not service_type or not asset_name:
+            raise ValueError(
+                f"Maintenance item {index + 1} needs both a type "
+                "and project / asset name."
+            )
+        items.append({
+            "service_type": service_type,
+            "asset_name": asset_name,
+            "asset_url": asset_url,
+        })
+
+    # Backward compatibility for older forms and direct API-style posts.
+    if not items:
+        service_type = form.get(
+            "service_type",
+            "Website Maintenance",
+        ).strip()
+        asset_name = form.get("asset_name", "").strip()
+        asset_url = form.get("asset_url", "").strip()
+        if asset_name:
+            items.append({
+                "service_type": service_type or "Website Maintenance",
+                "asset_name": asset_name,
+                "asset_url": asset_url,
+            })
+
+    if not items:
+        raise ValueError("Add at least one maintenance item.")
+    return items
+
+
+def _amc_draft_from_form(form, existing):
+    draft = dict(existing or {})
+    draft.update({
+        "title": form.get("title", "").strip(),
+        "opening": form.get("opening", "").strip(),
+        "overview": form.get("overview", "").strip(),
+        "scope_included": _split_nonempty_lines(form.get("scope_included", "")),
+        "scope_excluded": _split_nonempty_lines(form.get("scope_excluded", "")),
+        "assumptions": _split_nonempty_lines(form.get("assumptions", "")),
+        "needs_confirmation": _split_nonempty_lines(
+            form.get("needs_confirmation", "")
+        ),
+        "risk_flags": _split_nonempty_lines(form.get("risk_flags", "")),
+        "consistency_notes": _split_nonempty_lines(
+            form.get("consistency_notes", "")
+        ),
+    })
+
+    service_levels = []
+    for index in range(int(form.get("service_level_count", "0") or 0)):
+        service = form.get(f"service_{index}", "").strip()
+        commitment = form.get(f"commitment_{index}", "").strip()
+        if service and commitment:
+            service_levels.append({
+                "service": service,
+                "commitment": commitment,
+            })
+    draft["service_levels"] = service_levels
+
+    clauses = []
+    for index in range(int(form.get("clause_count", "0") or 0)):
+        heading = form.get(f"clause_heading_{index}", "").strip()
+        body = form.get(f"clause_body_{index}", "").strip()
+        if heading and body:
+            clauses.append({"heading": heading, "body": body})
+    draft["clauses"] = clauses
+    return validate_amc_draft(draft)
+
+
+def _queue_amc_job(db, client_id, input_data):
+    allowed, reason = _ai_availability(db)
+    if not allowed:
+        raise RuntimeError(reason)
+    contract_id = db.create_amc_contract(
+        client_id=client_id,
+        input_data=input_data,
+        model=app_config.CLAUDE_MODEL,
+        prompt_version=PROMPT_VERSION,
+    )
+    facts = input_data["facts"]
+    if not facts.get("contract_reference"):
+        facts["contract_reference"] = (
+            f"FB/AMC/{facts['effective_date'][:4]}/{contract_id:04d}"
+        )
+        db.update_amc_contract(contract_id, input_json=input_data)
+
+    job_id = f"amc_{time.time_ns()}"
+    jobs[job_id] = {
+        "status": "queued",
+        "progress": "Queued",
+        "log": [],
+        "result": None,
+        "started_at": datetime.now().isoformat(),
+        "type": "amc",
+    }
+    thread = threading.Thread(
+        target=run_amc_job,
+        args=(job_id, contract_id),
+        daemon=True,
+    )
+    thread.start()
+    return job_id, contract_id
+
+
+def run_amc_job(job_id, contract_id):
+    jobs[job_id]["status"] = "running"
+    jobs[job_id]["progress"] = "Preparing contract facts..."
+    db = get_db()
+    try:
+        contract = db.get_amc_contract(contract_id)
+        client = db.get_client(contract["client_id"])
+        settings = db.get_amc_settings()
+        input_data = contract["input_data"]
+
+        jobs[job_id]["progress"] = "Claude is drafting the AMC..."
+        jobs[job_id]["log"].append("✓ Contract facts validated")
+        generator = AmcAiGenerator()
+        draft = generator.generate_draft(
+            facts=input_data["facts"],
+            client=client,
+            defaults=settings,
+            project_context=input_data.get("project_context"),
+        )
+        usage = generator.get_usage_stats()
+        _record_ai_usage(db, "amc_draft", usage)
+        db.update_amc_contract(
+            contract_id,
+            status="review",
+            draft_json=draft,
+            model=generator.claude.model,
+            input_tokens=usage["input_tokens"],
+            output_tokens=usage["output_tokens"],
+            estimated_cost=usage["estimated_cost"],
+            error_message="",
+        )
+        db.add_amc_revision(contract_id, draft, "Initial AI draft")
+        jobs[job_id]["log"].append(
+            "✓ AI draft and consistency review complete"
+        )
+        jobs[job_id]["log"].append(
+            f"Tokens: {usage['total_tokens']} | "
+            f"Estimated cost: ${usage['estimated_cost']:.4f}"
+        )
+        jobs[job_id]["status"] = "done"
+        jobs[job_id]["progress"] = "Draft ready for review"
+        jobs[job_id]["result"] = {"amc_id": contract_id}
+    except Exception as exc:
+        logger.exception("AMC generation failed")
+        db.update_amc_contract(
+            contract_id,
+            status="error",
+            error_message=str(exc),
+        )
+        jobs[job_id]["status"] = "error"
+        jobs[job_id]["progress"] = f"Error: {exc}"
+        jobs[job_id]["log"].append(f"✗ {exc}")
+
+
+@app.route("/amc", methods=["GET"])
+def amc_page():
+    db = get_db()
+    return render_template(
+        "amc.html",
+        clients=db.get_clients(),
+        repos=db.get_repositories(enabled_only=True),
+        contracts=db.list_amc_contracts(),
+        defaults=db.get_amc_settings(),
+        default_effective_date=datetime.now().strftime("%Y-%m-%d"),
+    )
+
+
+@app.route("/amc/generate", methods=["POST"])
+def generate_amc():
+    db = get_db()
+    try:
+        client_id = int(request.form.get("client_id", "0"))
+    except ValueError:
+        client_id = 0
+    client = db.get_client(client_id)
+    if not client:
+        flash("Select a valid client or vendor.", "error")
+        return redirect(url_for("amc_page"))
+
+    effective_raw = request.form.get("effective_date", "").strip()
+    fee_raw = request.form.get("annual_fee", "").strip()
+    if not effective_raw or not fee_raw:
+        flash(
+            "Maintenance items, effective date and annual fee are required.",
+            "error",
+        )
+        return redirect(url_for("amc_page"))
+
+    try:
+        maintenance_items = _maintenance_items_from_form(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("amc_page"))
+
+    try:
+        effective = datetime.strptime(effective_raw, "%Y-%m-%d")
+        annual_fee = float(fee_raw)
+        if annual_fee <= 0:
+            raise ValueError
+    except ValueError:
+        flash(
+            "Enter a valid effective date and a positive annual fee.",
+            "error",
+        )
+        return redirect(url_for("amc_page"))
+
+    settings = db.get_amc_settings()
+    try:
+        term_months = max(1, int(settings.get("term_months", "12")))
+    except (TypeError, ValueError):
+        term_months = 12
+    end_date = effective + relativedelta(months=term_months) - relativedelta(days=1)
+
+    primary_item = maintenance_items[0]
+    facts = {
+        "maintenance_items": maintenance_items,
+        # Keep the first item in the legacy scalar fields for old exports and
+        # integrations that have not adopted the repeatable structure yet.
+        "service_type": primary_item["service_type"],
+        "asset_name": primary_item["asset_name"],
+        "asset_url": primary_item["asset_url"],
+        "effective_date": effective.strftime("%Y-%m-%d"),
+        "effective_date_display": _display_date(effective),
+        "end_date": end_date.strftime("%Y-%m-%d"),
+        "end_date_display": _display_date(end_date),
+        "term_months": term_months,
+        "annual_fee": annual_fee,
+        "currency": request.form.get("currency", "INR").strip().upper(),
+        "tax_note": "Taxes as applicable",
+        "scope_hint": request.form.get("scope_hint", "").strip(),
+        "contract_reference": "",
+    }
+    project_context = {
+        "repositories": request.form.getlist("repositories"),
+    }
+    try:
+        job_id, _ = _queue_amc_job(
+            db,
+            client_id,
+            {"facts": facts, "project_context": project_context},
+        )
+    except RuntimeError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("amc_page"))
+    return redirect(url_for("job_status_page", job_id=job_id))
+
+
+@app.route("/amc/<int:contract_id>", methods=["GET"])
+def review_amc(contract_id):
+    db = get_db()
+    contract = db.get_amc_contract(contract_id)
+    if not contract:
+        flash("AMC not found.", "error")
+        return redirect(url_for("amc_page"))
+    if not contract.get("draft"):
+        flash(
+            contract.get("error_message") or "The AMC draft is not ready yet.",
+            "error",
+        )
+        return redirect(url_for("amc_page"))
+    return render_template(
+        "amc_review.html",
+        contract=contract,
+        client=db.get_client(contract["client_id"]),
+        settings=db.get_amc_settings(),
+        revisions=db.get_amc_revisions(contract_id),
+    )
+
+
+@app.route("/amc/<int:contract_id>/save", methods=["POST"])
+def save_amc(contract_id):
+    db = get_db()
+    contract = db.get_amc_contract(contract_id)
+    if not contract or not contract.get("draft"):
+        flash("AMC draft not found.", "error")
+        return redirect(url_for("amc_page"))
+    try:
+        draft = _amc_draft_from_form(request.form, contract["draft"])
+        db.update_amc_contract(contract_id, status="review", draft_json=draft)
+        db.add_amc_revision(contract_id, draft, "Manual edit")
+        flash("AMC draft saved.", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("review_amc", contract_id=contract_id))
+
+
+@app.route("/amc/<int:contract_id>/revise", methods=["POST"])
+def revise_amc(contract_id):
+    db = get_db()
+    contract = db.get_amc_contract(contract_id)
+    instruction = request.form.get("revision_instruction", "").strip()
+    if not contract or not contract.get("draft"):
+        flash("AMC draft not found.", "error")
+        return redirect(url_for("amc_page"))
+    if not instruction:
+        flash("Describe the change you want Claude to make.", "error")
+        return redirect(url_for("review_amc", contract_id=contract_id))
+    allowed, reason = _ai_availability(db)
+    if not allowed:
+        flash(reason, "error")
+        return redirect(url_for("review_amc", contract_id=contract_id))
+
+    try:
+        current_draft = _amc_draft_from_form(request.form, contract["draft"])
+        client = db.get_client(contract["client_id"])
+        settings = db.get_amc_settings()
+        generator = AmcAiGenerator()
+        revised = generator.revise_draft(
+            draft=current_draft,
+            instruction=instruction,
+            facts=contract["input_data"]["facts"],
+            client=client,
+            defaults=settings,
+            project_context=contract["input_data"].get("project_context"),
+        )
+        usage = generator.get_usage_stats()
+        _record_ai_usage(db, "amc_revision", usage)
+        db.update_amc_contract(
+            contract_id,
+            status="review",
+            draft_json=revised,
+            input_tokens=contract["input_tokens"] + usage["input_tokens"],
+            output_tokens=contract["output_tokens"] + usage["output_tokens"],
+            estimated_cost=contract["estimated_cost"] + usage["estimated_cost"],
+        )
+        db.add_amc_revision(contract_id, revised, instruction)
+        flash("Claude revised the AMC draft.", "success")
+    except Exception as exc:
+        logger.exception("AMC revision failed")
+        flash(f"Could not revise the AMC: {exc}", "error")
+    return redirect(url_for("review_amc", contract_id=contract_id))
+
+
+@app.route("/amc/<int:contract_id>/export", methods=["POST"])
+def export_amc(contract_id):
+    db = get_db()
+    contract = db.get_amc_contract(contract_id)
+    if not contract or not contract.get("draft"):
+        flash("AMC draft not found.", "error")
+        return redirect(url_for("amc_page"))
+    if request.form.get("confirm_review") != "on":
+        flash("Confirm that you reviewed the AI draft before exporting.", "error")
+        return redirect(url_for("review_amc", contract_id=contract_id))
+
+    try:
+        draft = _amc_draft_from_form(request.form, contract["draft"])
+        client = db.get_client(contract["client_id"])
+        settings = db.get_amc_settings()
+        facts = contract["input_data"]["facts"]
+        safe_client = secure_filename(client["name"].lower()) or "client"
+        filename = (
+            f"amc_{safe_client}_{facts['effective_date']}_{contract_id}.docx"
+        )
+        output_path = os.path.join(get_amc_contracts_dir(), filename)
+        AmcDocumentGenerator().generate(
+            draft=draft,
+            facts=facts,
+            client=client,
+            settings=settings,
+            output_path=output_path,
+        )
+        db.update_amc_contract(
+            contract_id,
+            status="exported",
+            draft_json=draft,
+            output_filename=filename,
+        )
+        db.add_amc_revision(contract_id, draft, "Approved for DOCX export")
+        return send_file(output_path, as_attachment=True, download_name=filename)
+    except Exception as exc:
+        logger.exception("AMC DOCX export failed")
+        flash(f"Could not generate the DOCX: {exc}", "error")
+        return redirect(url_for("review_amc", contract_id=contract_id))
+
+
+@app.route("/amc/download/<path:filename>")
+def download_amc(filename):
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        flash("Invalid AMC filename.", "error")
+        return redirect(url_for("amc_page"))
+    full_path = os.path.join(get_amc_contracts_dir(), safe_name)
+    if not os.path.isfile(full_path):
+        flash("AMC file not found.", "error")
+        return redirect(url_for("amc_page"))
+    return send_file(full_path, as_attachment=True)
+
+
+@app.route("/amc/settings", methods=["GET", "POST"])
+def amc_settings():
+    db = get_db()
+    if request.method == "POST":
+        fields = [
+            "term_months", "payment_schedule", "jurisdiction",
+            "default_response_time", "renewal_policy",
+            "notice_period_days",
+        ]
+        values = {
+            field: request.form.get(field, "").strip()
+            for field in fields
+        }
+        db.save_amc_settings(values)
+        flash("AMC defaults saved.", "success")
+        return redirect(url_for("amc_settings"))
+    return render_template("amc_settings.html", defaults=db.get_amc_settings())
+
+
+@app.route("/amc/<int:contract_id>/renew", methods=["POST"])
+def renew_amc(contract_id):
+    db = get_db()
+    contract = db.get_amc_contract(contract_id)
+    if not contract:
+        flash("AMC not found.", "error")
+        return redirect(url_for("amc_page"))
+    input_data = contract["input_data"]
+    facts = dict(input_data["facts"])
+    try:
+        effective = datetime.strptime(facts["end_date"], "%Y-%m-%d") + relativedelta(days=1)
+    except (KeyError, ValueError):
+        effective = datetime.now()
+    term_months = int(facts.get("term_months", 12))
+    end_date = effective + relativedelta(months=term_months) - relativedelta(days=1)
+    facts.update({
+        "effective_date": effective.strftime("%Y-%m-%d"),
+        "effective_date_display": _display_date(effective),
+        "end_date": end_date.strftime("%Y-%m-%d"),
+        "end_date_display": _display_date(end_date),
+        "contract_reference": "",
+    })
+    try:
+        job_id, _ = _queue_amc_job(
+            db,
+            contract["client_id"],
+            {
+                "facts": facts,
+                "project_context": input_data.get("project_context", {}),
+            },
+        )
+    except RuntimeError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("amc_page"))
+    return redirect(url_for("job_status_page", job_id=job_id))
+
+
+# ---------------------------------------------------------------------------
 # Client Management
 # ---------------------------------------------------------------------------
-@app.route("/clients")
+@app.route("/settings/clients")
 def clients_page():
     db = get_db()
     clients = db.get_clients()
     return render_template("clients.html", clients=clients)
 
 
+@app.route("/clients")
+def legacy_clients_page():
+    return redirect(url_for("clients_page"))
+
+
+@app.route("/settings/clients/add", methods=["POST"])
 @app.route("/clients/add", methods=["POST"])
 def add_client():
     name = request.form.get("name", "").strip()
@@ -662,11 +1331,18 @@ def add_client():
         address_line2=request.form.get("address_line2", "").strip(),
         gstin=request.form.get("gstin", "").strip(),
         contact=request.form.get("contact", "").strip(),
+        contact_person=request.form.get("contact_person", "").strip(),
+        email=request.form.get("email", "").strip(),
+        phone=request.form.get("phone", "").strip(),
+        website=request.form.get("website", "").strip(),
+        signatory_name=request.form.get("signatory_name", "").strip(),
+        signatory_title=request.form.get("signatory_title", "").strip(),
     )
     flash(f"Added client: {name}", "success")
     return redirect(url_for("clients_page"))
 
 
+@app.route("/settings/clients/update", methods=["POST"])
 @app.route("/clients/update", methods=["POST"])
 def update_client():
     client_id = request.form.get("client_id")
@@ -682,11 +1358,18 @@ def update_client():
         address_line2=request.form.get("address_line2", "").strip(),
         gstin=request.form.get("gstin", "").strip(),
         contact=request.form.get("contact", "").strip(),
+        contact_person=request.form.get("contact_person", "").strip(),
+        email=request.form.get("email", "").strip(),
+        phone=request.form.get("phone", "").strip(),
+        website=request.form.get("website", "").strip(),
+        signatory_name=request.form.get("signatory_name", "").strip(),
+        signatory_title=request.form.get("signatory_title", "").strip(),
     )
     flash(f"Updated client: {name}", "success")
     return redirect(url_for("clients_page"))
 
 
+@app.route("/settings/clients/delete", methods=["POST"])
 @app.route("/clients/delete", methods=["POST"])
 def delete_client():
     client_id = request.form.get("client_id")
@@ -747,21 +1430,128 @@ def api_github_branches():
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
-@app.route("/settings")
+@app.route("/settings/company", methods=["GET", "POST"])
+def company_settings():
+    db = get_db()
+    if request.method == "POST":
+        fields = [
+            "provider_name",
+            "provider_owner_name",
+            "provider_signatory_title",
+            "provider_address",
+            "provider_email",
+            "provider_phone",
+            "provider_website",
+            "bank_details",
+        ]
+        values = {
+            field: request.form.get(field, "").strip()
+            for field in fields
+        }
+        if not values["provider_name"] or not values["provider_owner_name"]:
+            flash(
+                "Business name and authorized signatory are required.",
+                "error",
+            )
+            return render_template(
+                "company_settings.html",
+                defaults={
+                    **db.get_amc_settings(),
+                    **values,
+                    "include_bank_details": (
+                        request.form.get("include_bank_details") == "on"
+                    ),
+                },
+            )
+        values["include_bank_details"] = (
+            request.form.get("include_bank_details") == "on"
+        )
+        db.save_amc_settings(values)
+        flash("Company details saved.", "success")
+        return redirect(url_for("company_settings"))
+    return render_template(
+        "company_settings.html",
+        defaults=db.get_amc_settings(),
+    )
+
+
+@app.route("/settings", methods=["GET", "POST"])
 def settings_page():
+    db = get_db()
+    current = db.get_runtime_settings(_runtime_setting_defaults())
+
+    if request.method == "POST":
+        try:
+            model = request.form.get("claude_model", "").strip()
+            if not model:
+                raise ValueError("Claude model is required.")
+
+            budget_limit = float(
+                request.form.get("ai_budget_limit", "").strip()
+            )
+            if not 0 <= budget_limit <= 100000:
+                raise ValueError("AI budget must be between 0 and 100,000.")
+
+            max_tokens = int(request.form.get("ai_max_tokens", "").strip())
+            if not 1 <= max_tokens <= 100000:
+                raise ValueError(
+                    "AI token cap must be between 1 and 100,000."
+                )
+
+            max_workers = int(request.form.get("max_workers", "").strip())
+            if not 1 <= max_workers <= 32:
+                raise ValueError("Max workers must be between 1 and 32.")
+
+            batch_size = int(request.form.get("batch_size", "").strip())
+            if not 1 <= batch_size <= 1000:
+                raise ValueError("Batch size must be between 1 and 1,000.")
+
+            log_level = request.form.get("log_level", "INFO").strip().upper()
+            if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
+                raise ValueError("Select a valid log level.")
+
+            values = {
+                "GITHUB_TOKEN": current.get("GITHUB_TOKEN", ""),
+                "CLAUDE_API_KEY": current.get("CLAUDE_API_KEY", ""),
+                "CLAUDE_MODEL": model,
+                "AI_ENABLED": request.form.get("ai_enabled") == "on",
+                "AI_BUDGET_LIMIT": budget_limit,
+                "AI_MAX_TOKENS": max_tokens,
+                "PARALLEL_PROCESSING": (
+                    request.form.get("parallel_processing") == "on"
+                ),
+                "MAX_WORKERS": max_workers,
+                "BATCH_SIZE": batch_size,
+                "LOG_LEVEL": log_level,
+            }
+            github_token = request.form.get("github_token", "").strip()
+            claude_key = request.form.get("claude_api_key", "").strip()
+            if github_token:
+                values["GITHUB_TOKEN"] = github_token
+            if claude_key:
+                values["CLAUDE_API_KEY"] = claude_key
+
+            db.save_runtime_settings(values)
+            _apply_runtime_settings(values)
+            flash(
+                "Settings saved and applied to new jobs immediately.",
+                "success",
+            )
+            return redirect(url_for("settings_page"))
+        except ValueError as exc:
+            flash(str(exc), "error")
+
+    current = db.get_runtime_settings(_runtime_setting_defaults())
+    usage = db.get_monthly_ai_usage()
     settings = {
-        'GITHUB_TOKEN': '***' + (app_config.GITHUB_TOKEN[-4:] if app_config.GITHUB_TOKEN else ''),
-        'CLAUDE_API_KEY': '***' + (app_config.CLAUDE_API_KEY[-4:] if app_config.CLAUDE_API_KEY else ''),
-        'CLAUDE_MODEL': app_config.CLAUDE_MODEL,
-        'AI_ENABLED': app_config.AI_ENABLED,
-        'AI_BUDGET_LIMIT': app_config.AI_BUDGET_LIMIT,
-        'AI_MAX_TOKENS': app_config.AI_MAX_TOKENS,
-        'PARALLEL_PROCESSING': app_config.PARALLEL_PROCESSING,
-        'MAX_WORKERS': app_config.MAX_WORKERS,
-        'BATCH_SIZE': app_config.BATCH_SIZE,
-        'LOG_LEVEL': app_config.LOG_LEVEL,
-        'WHATSAPP_ENABLED': app_config.WHATSAPP_ENABLED,
-        'ENVIRONMENT': os.getenv("ENVIRONMENT", "development"),
+        **current,
+        "GITHUB_TOKEN_MASKED": _masked_secret(current.get("GITHUB_TOKEN")),
+        "CLAUDE_API_KEY_MASKED": _masked_secret(
+            current.get("CLAUDE_API_KEY")
+        ),
+        "GITHUB_TOKEN_SET": bool(current.get("GITHUB_TOKEN")),
+        "CLAUDE_API_KEY_SET": bool(current.get("CLAUDE_API_KEY")),
+        "MONTHLY_AI_USAGE": usage,
     }
     return render_template("settings.html", settings=settings)
 

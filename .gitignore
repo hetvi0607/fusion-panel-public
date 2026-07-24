@@ -43,6 +43,7 @@ logs/commit_tracker.log
 data/repositories.db
 data/reports/*.csv
 !data/reports/.gitkeep
+data/amc_contracts/
 
 # Google credentials
 credentials.json

@@ -1,11 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Clients - Commit Tracker{% endblock %}
+{% block title %}Clients - Example Company{% endblock %}
 
 {% block content %}
-<div class="mb-8 flex items-center justify-between">
+{% include "_settings_nav.html" %}
+<div class="mb-6 flex items-center justify-between">
     <div>
         <h1 class="text-3xl font-bold text-gray-900">Clients</h1>
-        <p class="mt-1 text-sm text-gray-500">Manage billing clients for invoice generation</p>
+        <p class="mt-1 text-sm text-gray-500">Manage client details for invoices and AI-generated contracts</p>
     </div>
     <button onclick="document.getElementById('add-modal').classList.remove('hidden')"
             class="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">
@@ -49,15 +50,18 @@
                     {% endif %}
                 </td>
                 <td class="px-6 py-4">
-                    <p class="text-sm text-gray-700">{{ client.contact or '—' }}</p>
+                    <p class="text-sm text-gray-700">{{ client.email or client.contact or '—' }}</p>
+                    {% if client.contact_person or client.phone %}
+                    <p class="text-xs text-gray-500">{{ client.contact_person }}{% if client.contact_person and client.phone %} · {% endif %}{{ client.phone }}</p>
+                    {% endif %}
                 </td>
                 <td class="px-6 py-4 text-right">
                     <div class="flex items-center justify-end space-x-2">
-                        <button onclick="openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }})"
+                        <button onclick="openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }}, {{ client.contact_person|tojson }}, {{ client.email|tojson }}, {{ client.phone|tojson }}, {{ client.website|tojson }}, {{ client.signatory_name|tojson }}, {{ client.signatory_title|tojson }})"
                                 class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                             <i class="fa-solid fa-pen text-[10px] mr-1"></i> Edit
                         </button>
-                        <form method="POST" action="/clients/delete" onsubmit="return confirm('Delete {{ client.name }}?');" class="inline">
+                        <form method="POST" action="/settings/clients/delete" onsubmit="return confirm('Delete {{ client.name }}?');" class="inline">
                             <input type="hidden" name="client_id" value="{{ client.id }}">
                             <button type="submit"
                                     class="inline-flex items-center rounded-md bg-white border border-red-200 px-2.5 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors">
@@ -84,14 +88,14 @@
 <div id="add-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
     <div class="flex min-h-full items-center justify-center p-4">
         <div class="fixed inset-0 bg-gray-500 bg-opacity-50 transition-opacity" onclick="document.getElementById('add-modal').classList.add('hidden')"></div>
-        <div class="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6 z-10">
+        <div class="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 z-10">
             <div class="flex items-center justify-between mb-5">
                 <h3 class="text-lg font-semibold text-gray-900">Add Client</h3>
                 <button onclick="document.getElementById('add-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
-            <form method="POST" action="/clients/add" class="space-y-3">
+            <form method="POST" action="/settings/clients/add" class="space-y-3">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Company / Name <span class="text-red-500">*</span></label>
                     <input type="text" name="name" required placeholder="e.g. Acme Corp"
@@ -117,6 +121,32 @@
                     <input type="text" name="contact" placeholder="e.g. john@example.com or +1 234 567 8900"
                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                 </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                        <input type="text" name="contact_person" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" name="email" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                        <input type="text" name="phone" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
+                        <input type="url" name="website" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Authorized Signatory</label>
+                        <input type="text" name="signatory_name" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Signatory Title</label>
+                        <input type="text" name="signatory_title" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                </div>
                 <div class="flex justify-end space-x-3 pt-2">
                     <button type="button" onclick="document.getElementById('add-modal').classList.add('hidden')"
                             class="rounded-lg bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
@@ -134,14 +164,14 @@
 <div id="edit-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
     <div class="flex min-h-full items-center justify-center p-4">
         <div class="fixed inset-0 bg-gray-500 bg-opacity-50 transition-opacity" onclick="document.getElementById('edit-modal').classList.add('hidden')"></div>
-        <div class="relative bg-white rounded-xl shadow-xl max-w-md w-full p-6 z-10">
+        <div class="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 z-10">
             <div class="flex items-center justify-between mb-5">
                 <h3 class="text-lg font-semibold text-gray-900">Edit Client</h3>
                 <button onclick="document.getElementById('edit-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
-            <form method="POST" action="/clients/update" class="space-y-3">
+            <form method="POST" action="/settings/clients/update" class="space-y-3">
                 <input type="hidden" name="client_id" id="edit-client-id">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Company / Name <span class="text-red-500">*</span></label>
@@ -168,6 +198,32 @@
                     <input type="text" name="contact" id="edit-contact"
                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                 </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                        <input type="text" name="contact_person" id="edit-contact-person" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" name="email" id="edit-email" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                        <input type="text" name="phone" id="edit-phone" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
+                        <input type="url" name="website" id="edit-website" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Authorized Signatory</label>
+                        <input type="text" name="signatory_name" id="edit-signatory-name" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Signatory Title</label>
+                        <input type="text" name="signatory_title" id="edit-signatory-title" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    </div>
+                </div>
                 <div class="flex justify-end space-x-3 pt-2">
                     <button type="button" onclick="document.getElementById('edit-modal').classList.add('hidden')"
                             class="rounded-lg bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
@@ -184,13 +240,19 @@
 
 {% block scripts %}
 <script>
-function openEditModal(id, name, addr1, addr2, gstin, contact) {
+function openEditModal(id, name, addr1, addr2, gstin, contact, contactPerson, email, phone, website, signatoryName, signatoryTitle) {
     document.getElementById('edit-client-id').value = id;
     document.getElementById('edit-name').value = name;
     document.getElementById('edit-addr1').value = addr1;
     document.getElementById('edit-addr2').value = addr2;
     document.getElementById('edit-gstin').value = gstin;
     document.getElementById('edit-contact').value = contact;
+    document.getElementById('edit-contact-person').value = contactPerson;
+    document.getElementById('edit-email').value = email;
+    document.getElementById('edit-phone').value = phone;
+    document.getElementById('edit-website').value = website;
+    document.getElementById('edit-signatory-name').value = signatoryName;
+    document.getElementById('edit-signatory-title').value = signatoryTitle;
     document.getElementById('edit-modal').classList.remove('hidden');
 }
 </script>

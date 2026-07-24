@@ -10,6 +10,7 @@ An automated system for collecting, analyzing, and reporting GitHub commits acro
 💬 **WhatsApp Integration** - Send reports to WhatsApp Business groups  
 📧 **Email Notifications** - Automated email delivery (optional)  
 🗄️ **Repository Management** - Database-backed repository configuration
+📄 **AI AMC Generator** - Claude-drafted maintenance contracts with review, revision history, and DOCX export
 
 ## Quick Start
 
@@ -71,6 +72,9 @@ task-sheet-automation/
 │   │   ├── github_client.py    # GitHub API integration
 │   │   ├── csv_reporter.py     # CSV report generation
 │   │   ├── repository_db.py    # Repository database management
+│   │   ├── claude_service.py   # Shared structured Claude client
+│   │   ├── amc_ai_generator.py # AI contract drafting and review
+│   │   ├── amc_document_generator.py # AMC DOCX export
 │   │   └── ai/                 # AI analysis modules
 │   │       ├── analyzer.py     # Detailed commit analysis
 │   │       ├── analyzer_simple.py  # Simplified analyzer
@@ -111,7 +115,10 @@ task-sheet-automation/
 
 ## Configuration
 
-Configuration is managed through environment variables in the `.env` file:
+The `.env` file supplies initial configuration. In the web GUI, `/settings`
+persists runtime overrides in the local SQLite database and applies them to new
+jobs without a server restart. Secret replacement fields are write-only and are
+never rendered back to the browser.
 
 ### Essential Settings
 
@@ -151,7 +158,10 @@ BATCH_SIZE=100
 LOG_LEVEL=INFO
 ```
 
-See `.env.example` for all available options.
+See `.env.example` for all startup options. The web settings page controls the
+GitHub and Claude credentials, Claude model, AI guardrails, concurrent
+repository fetching, AI batch size, logging level, reusable clients, tracked
+repositories, and company/provider details used in generated contracts.
 
 ## Repository Management
 
@@ -232,6 +242,12 @@ The system generates:
 3. **AI Summary Report** - Point-wise summaries and overall analysis (if AI enabled)
 
 Reports are saved in `data/reports/` directory.
+
+The web interface also provides an **AMC** section. Configure reusable business
+defaults once, select a saved client, add one or more maintained websites,
+applications, products, or infrastructure items, enter the effective date and
+annual fee, then review or revise Claude's structured draft before exporting an
+unsigned DOCX contract.
 
 ## Troubleshooting
 

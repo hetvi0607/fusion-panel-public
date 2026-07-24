@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}My Company Details - Example Company{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-900">My Company Details</h1>
+    <p class="mt-1 text-sm text-gray-500">
+        Maintain your service-provider identity and payment details in one place.
+        These values are reused throughout generated AMCs, including the document footer.
+    </p>
+</div>
+
+<form method="POST" action="/settings/company" class="space-y-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-4">
+            <i class="fa-solid fa-building text-teal-600 mr-2"></i>Service Provider
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
+                <input name="provider_name" value="{{ defaults.provider_name }}" required class="field">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Authorized Signatory</label>
+                <input name="provider_owner_name" value="{{ defaults.provider_owner_name }}" required class="field">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Signatory Title</label>
+                <input name="provider_signatory_title" value="{{ defaults.provider_signatory_title }}" class="field">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
+                <input type="url" name="provider_website" value="{{ defaults.provider_website }}" class="field">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input type="email" name="provider_email" value="{{ defaults.provider_email }}" class="field">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input name="provider_phone" value="{{ defaults.provider_phone }}" class="field">
+            </div>
+            <div class="sm:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <textarea name="provider_address" rows="3" class="field">{{ defaults.provider_address }}</textarea>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+                <h2 class="text-base font-semibold text-gray-900">
+                    <i class="fa-solid fa-building-columns text-teal-600 mr-2"></i>Bank Details
+                </h2>
+                <p class="text-xs text-gray-500 mt-1">
+                    Stored centrally; enable inclusion only when bank information should appear in exported AMCs.
+                </p>
+            </div>
+            <label class="flex shrink-0 items-center text-sm text-gray-700">
+                <input type="checkbox" name="include_bank_details" {% if defaults.include_bank_details %}checked{% endif %}
+                       class="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                <span class="ml-2">Include in AMC exports</span>
+            </label>
+        </div>
+        <textarea name="bank_details" rows="6"
+                  placeholder="Bank Name:&#10;Branch:&#10;Account Name:&#10;Account Number:&#10;IFSC Code:"
+                  class="field mt-4 font-mono">{{ defaults.bank_details }}</textarea>
+    </div>
+
+    <div class="flex justify-end">
+        <button class="rounded-xl bg-gray-900 px-6 py-3 text-sm font-semibold text-white hover:bg-gray-800">
+            <i class="fa-solid fa-floppy-disk mr-2"></i>Save Company Details
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block head %}
+<style>
+.field { display:block; width:100%; border:1px solid #d1d5db; border-radius:.5rem; padding:.5rem .75rem; font-size:.875rem; }
+.field:focus { outline:none; border-color:#14b8a6; box-shadow:0 0 0 1px #14b8a6; }
+</style>
+{% endblock %}

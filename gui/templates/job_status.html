@@ -1,12 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Job {{ job_id }} - Commit Tracker{% endblock %}
+{% block title %}Job {{ job_id }} - Example Company{% endblock %}
 
 {% block content %}
 <div class="mb-8">
     <div class="flex items-center space-x-3">
-        <a href="/generate" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-arrow-left"></i></a>
+        <a href="{% if job.get('type') == 'invoice' %}/invoice{% elif job.get('type') == 'amc' %}/amc{% else %}/generate{% endif %}"
+           class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-arrow-left"></i></a>
         <div>
-            <h1 class="text-3xl font-bold text-gray-900">Report Generation</h1>
+            <h1 class="text-3xl font-bold text-gray-900">
+                {% if job.get('type') == 'invoice' %}Invoice Generation
+                {% elif job.get('type') == 'amc' %}AI Contract Drafting
+                {% else %}Report Generation{% endif %}
+            </h1>
             <p class="mt-1 text-sm text-gray-500">Job: {{ job_id }}</p>
         </div>
     </div>
@@ -42,10 +47,12 @@
 
             {% if job.status == 'done' and job.result %}
             <div class="mt-6 pt-6 border-t border-gray-200 space-y-3">
+                {% if job.result.total_commits is defined %}
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-500">Total Commits</span>
                     <span class="font-semibold text-gray-900">{{ job.result.total_commits }}</span>
                 </div>
+                {% endif %}
                 {% if job.result.date_range %}
                 <div class="flex justify-between text-sm">
                     <span class="text-gray-500">Date Range</span>
@@ -66,6 +73,14 @@
                     </a>
                 </div>
                 {% endif %}
+                {% if job.result.amc_id %}
+                <div class="pt-2">
+                    <a href="/amc/{{ job.result.amc_id }}"
+                       class="block w-full text-center rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-500 transition-colors">
+                        <i class="fa-solid fa-pen-to-square mr-1.5"></i> Review AMC Draft
+                    </a>
+                </div>
+                {% endif %}
             </div>
             {% endif %}
 
@@ -73,6 +88,10 @@
                 {% if job.get('type') == 'invoice' %}
                 <a href="/invoice" class="block w-full text-center rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-500 transition-colors">
                     <i class="fa-solid fa-plus mr-1"></i> New Invoice
+                </a>
+                {% elif job.get('type') == 'amc' %}
+                <a href="/amc" class="block w-full text-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-500 transition-colors">
+                    <i class="fa-solid fa-plus mr-1"></i> New AMC
                 </a>
                 {% else %}
                 <a href="/generate" class="block w-full text-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">

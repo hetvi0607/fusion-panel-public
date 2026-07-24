@@ -69,7 +69,9 @@ class AICsvSummarizer:
                 commit_msg = f"- {commit.get('Commit Message', '')} (by {commit.get('Username', 'unknown')})"
                 commit_messages.append(commit_msg)
             
-            commits_text = "\n".join(commit_messages[:100])  # Limit to first 100 commits
+            commits_text = "\n".join(
+                commit_messages[:app_config.BATCH_SIZE]
+            )
             
             # Create prompt for AI
             prompt = f"""Analyze the following commits for repository '{repo_name}' and provide a concise point-wise summary of the work done.
@@ -88,7 +90,7 @@ Keep the summary concise and actionable."""
             # Call Claude API
             message = self.client.messages.create(
                 model=self.model,
-                max_tokens=1000,
+                max_tokens=min(1000, app_config.AI_MAX_TOKENS),
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
@@ -144,7 +146,7 @@ Commit Distribution:
             
             # Sample commit messages from each repository
             sample_commits = {}
-            for commit in all_commits[:50]:  # Sample first 50 commits
+            for commit in all_commits[:app_config.BATCH_SIZE]:
                 repo = commit.get('Repository', 'unknown')
                 if repo not in sample_commits:
                     sample_commits[repo] = []
@@ -174,7 +176,7 @@ Keep it concise and high-level."""
             # Call Claude API
             message = self.client.messages.create(
                 model=self.model,
-                max_tokens=1500,
+                max_tokens=min(1500, app_config.AI_MAX_TOKENS),
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
@@ -237,13 +239,11 @@ Keep it concise and high-level."""
         Returns:
             Dictionary with token usage and estimated cost
         """
-        # Claude pricing (approximate)
-        input_cost_per_1k = 0.003  # $3 per million tokens
-        output_cost_per_1k = 0.015  # $15 per million tokens
-        
         estimated_cost = (
-            (self.total_input_tokens / 1000) * input_cost_per_1k +
-            (self.total_output_tokens / 1000) * output_cost_per_1k
+            (self.total_input_tokens / 1_000_000)
+            * app_config.CLAUDE_INPUT_COST_PER_MILLION
+            + (self.total_output_tokens / 1_000_000)
+            * app_config.CLAUDE_OUTPUT_COST_PER_MILLION
         )
         
         return {

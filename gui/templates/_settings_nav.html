@@ -1,0 +1,32 @@
+<div class="mb-6">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">Settings</h1>
+        <p class="mt-1 text-sm text-gray-500">
+            Configure the application and manage reusable workspace data.
+        </p>
+    </div>
+
+    <nav class="mt-5 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white p-2 shadow-sm"
+         aria-label="Settings sections">
+        <a href="{{ url_for('settings_page') }}"
+           class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold transition-colors
+                  {% if request.path == '/settings' %}bg-gray-900 text-white{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+            <i class="fa-solid fa-sliders mr-2"></i>App Config
+        </a>
+        <a href="{{ url_for('repos_page') }}"
+           class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold transition-colors
+                  {% if request.path.startswith('/settings/repositories') %}bg-gray-900 text-white{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+            <i class="fa-solid fa-code-branch mr-2"></i>Repositories
+        </a>
+        <a href="{{ url_for('clients_page') }}"
+           class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold transition-colors
+                  {% if request.path.startswith('/settings/clients') %}bg-gray-900 text-white{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+            <i class="fa-solid fa-building mr-2"></i>Clients
+        </a>
+        <a href="{{ url_for('company_settings') }}"
+           class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold transition-colors
+                  {% if request.path.startswith('/settings/company') %}bg-gray-900 text-white{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+            <i class="fa-solid fa-briefcase mr-2"></i>My Company Details
+        </a>
+    </nav>
+</div>

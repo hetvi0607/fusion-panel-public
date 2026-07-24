@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Repositories - Commit Tracker{% endblock %}
+{% block title %}Repositories - Example Company{% endblock %}
 
 {% block content %}
-<div class="mb-8 flex items-center justify-between">
+{% include "_settings_nav.html" %}
+<div class="mb-6 flex items-center justify-between">
     <div>
         <h1 class="text-3xl font-bold text-gray-900">Repositories</h1>
         <p class="mt-1 text-sm text-gray-500">Manage your tracked GitHub repositories</p>
@@ -71,7 +72,7 @@
                                 class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                             <i class="fa-solid fa-pen text-[10px] mr-1"></i> Edit
                         </button>
-                        <form method="POST" action="/repos/delete" onsubmit="return confirm('Delete {{ repo.repo }} ({{ repo.branch }})?');" class="inline">
+                        <form method="POST" action="/settings/repositories/delete" onsubmit="return confirm('Delete {{ repo.repo }} ({{ repo.branch }})?');" class="inline">
                             <input type="hidden" name="repo_name" value="{{ repo.repo }}">
                             <input type="hidden" name="branch" value="{{ repo.branch }}">
                             <button type="submit"
@@ -106,7 +107,7 @@
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
-            <form method="POST" action="/repos/add" class="space-y-4">
+            <form method="POST" action="/settings/repositories/add" class="space-y-4">
                 <div class="relative">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Repository</label>
                     <input type="text" id="add-repo-input" name="repo_name" required
@@ -157,7 +158,7 @@
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
-            <form method="POST" action="/repos/update" class="space-y-4">
+            <form method="POST" action="/settings/repositories/update" class="space-y-4">
                 <input type="hidden" name="repo_name" id="edit-repo-name">
                 <input type="hidden" name="branch" id="edit-branch">
                 <div>

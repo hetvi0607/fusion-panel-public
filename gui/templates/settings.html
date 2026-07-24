@@ -1,143 +1,188 @@
 {% extends "base.html" %}
-{% block title %}Settings - Commit Tracker{% endblock %}
+{% block title %}Settings - Example Company{% endblock %}
 
 {% block content %}
-<div class="mb-8">
-    <h1 class="text-3xl font-bold text-gray-900">Settings</h1>
-    <p class="mt-1 text-sm text-gray-500">View current configuration (edit <code class="text-xs bg-gray-100 px-1.5 py-0.5 rounded">.env</code> file to change)</p>
-</div>
+<form method="POST" action="/settings" class="space-y-6">
+    {% include "_settings_nav.html" %}
 
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-    <!-- API Keys -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 class="text-base font-semibold text-gray-900 mb-4">
-            <i class="fa-solid fa-key text-amber-500 mr-2"></i>API Credentials
-        </h2>
-        <div class="space-y-4">
-            <div>
-                <label class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">GitHub Token</label>
-                <div class="flex items-center bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                    <i class="fa-brands fa-github text-gray-400 mr-2"></i>
-                    <span class="text-sm font-mono text-gray-700">{{ settings.GITHUB_TOKEN }}</span>
-                    {% if settings.GITHUB_TOKEN and settings.GITHUB_TOKEN != '***' %}
-                    <span class="ml-auto inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">Set</span>
-                    {% else %}
-                    <span class="ml-auto inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">Not Set</span>
-                    {% endif %}
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-gray-500">
+            Saved locally and applied to new jobs immediately; secrets are never rendered back to the page.
+        </p>
+        <button type="submit"
+                class="inline-flex items-center justify-center rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-800">
+            <i class="fa-solid fa-floppy-disk mr-2"></i>Save changes
+        </button>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="mb-5">
+                <div>
+                    <h2 class="text-base font-semibold text-gray-900">
+                        <i class="fa-solid fa-key text-amber-500 mr-2"></i>API credentials
+                    </h2>
+                    <p class="mt-1 text-xs text-gray-500">Leave a replacement field blank to keep the current secret.</p>
                 </div>
             </div>
-            <div>
-                <label class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Claude API Key</label>
-                <div class="flex items-center bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                    <i class="fa-solid fa-robot text-gray-400 mr-2"></i>
-                    <span class="text-sm font-mono text-gray-700">{{ settings.CLAUDE_API_KEY }}</span>
-                    {% if settings.CLAUDE_API_KEY and settings.CLAUDE_API_KEY != '***' %}
-                    <span class="ml-auto inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-medium text-green-700">Set</span>
-                    {% else %}
-                    <span class="ml-auto inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700">Not Set</span>
-                    {% endif %}
+
+            <div class="space-y-5">
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label for="github_token" class="block text-xs font-semibold uppercase tracking-wider text-gray-500">GitHub token</label>
+                        <span class="text-xs {% if settings.GITHUB_TOKEN_SET %}text-green-700{% else %}text-red-600{% endif %}">
+                            {{ settings.GITHUB_TOKEN_MASKED }}
+                        </span>
+                    </div>
+                    <input id="github_token" name="github_token" type="password" autocomplete="new-password"
+                           placeholder="Enter a new token to replace it"
+                           class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <p class="mt-1.5 text-xs text-gray-500">Used by repository discovery, commit reports, and invoice generation.</p>
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between">
+                        <label for="claude_api_key" class="block text-xs font-semibold uppercase tracking-wider text-gray-500">Claude API key</label>
+                        <span class="text-xs {% if settings.CLAUDE_API_KEY_SET %}text-green-700{% else %}text-red-600{% endif %}">
+                            {{ settings.CLAUDE_API_KEY_MASKED }}
+                        </span>
+                    </div>
+                    <input id="claude_api_key" name="claude_api_key" type="password" autocomplete="new-password"
+                           placeholder="Enter a new key to replace it"
+                           class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <p class="mt-1.5 text-xs text-gray-500">Used by report summaries, invoice categorization, and AMC drafting.</p>
+                </div>
+
+                <div>
+                    <label for="claude_model" class="block text-xs font-semibold uppercase tracking-wider text-gray-500">Claude model</label>
+                    <input id="claude_model" name="claude_model" type="text" required
+                           value="{{ settings.CLAUDE_MODEL }}"
+                           class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2.5 font-mono text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <p class="mt-1.5 text-xs text-gray-500">New AI clients use this model as soon as settings are saved.</p>
                 </div>
             </div>
-            <div>
-                <label class="block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">Claude Model</label>
-                <div class="bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                    <span class="text-sm font-mono text-gray-700">{{ settings.CLAUDE_MODEL }}</span>
+        </section>
+
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                    <h2 class="text-base font-semibold text-gray-900">
+                        <i class="fa-solid fa-brain text-purple-500 mr-2"></i>AI controls
+                    </h2>
+                    <p class="mt-1 text-xs text-gray-500">Global guardrails for every AI-powered GUI workflow.</p>
+                </div>
+                <label class="relative inline-flex cursor-pointer items-center">
+                    <input type="checkbox" name="ai_enabled" class="peer sr-only" {% if settings.AI_ENABLED %}checked{% endif %}>
+                    <span class="h-6 w-11 rounded-full bg-gray-200 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-green-600 peer-checked:after:translate-x-5"></span>
+                    <span class="ml-2 text-sm font-medium text-gray-700">Enabled</span>
+                </label>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <label for="ai_budget_limit" class="block text-xs font-semibold uppercase tracking-wider text-gray-500">Monthly budget guardrail (USD)</label>
+                    <div class="relative mt-2">
+                        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-gray-500">$</span>
+                        <input id="ai_budget_limit" name="ai_budget_limit" type="number" min="0" max="100000" step="0.01" required
+                               value="{{ settings.AI_BUDGET_LIMIT }}"
+                               class="block w-full rounded-lg border border-gray-300 py-2.5 pl-7 pr-3 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    </div>
+                    <p class="mt-1.5 text-xs text-gray-500">New AI jobs stop when reached. Use 0 for no limit.</p>
+                </div>
+                <div>
+                    <label for="ai_max_tokens" class="block text-xs font-semibold uppercase tracking-wider text-gray-500">Output token cap</label>
+                    <input id="ai_max_tokens" name="ai_max_tokens" type="number" min="1" max="100000" required
+                           value="{{ settings.AI_MAX_TOKENS }}"
+                           class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                    <p class="mt-1.5 text-xs text-gray-500">Caps each Claude response; individual features may request less.</p>
                 </div>
             </div>
-        </div>
-    </div>
 
-    <!-- AI Settings -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 class="text-base font-semibold text-gray-900 mb-4">
-            <i class="fa-solid fa-brain text-purple-500 mr-2"></i>AI Analysis
-        </h2>
-        <div class="space-y-4">
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">AI Enabled</span>
-                {% if settings.AI_ENABLED %}
-                <span class="inline-flex items-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
-                    <i class="fa-solid fa-circle text-[6px] mr-1.5"></i> On
+            <div class="mt-5 rounded-lg border border-purple-100 bg-purple-50 p-4">
+                <p class="text-xs font-semibold uppercase tracking-wider text-purple-700">This month</p>
+                <div class="mt-2 grid grid-cols-3 gap-3">
+                    <div>
+                        <p class="text-lg font-bold text-gray-900">${{ "%.4f"|format(settings.MONTHLY_AI_USAGE.estimated_cost) }}</p>
+                        <p class="text-xs text-gray-500">Estimated spend</p>
+                    </div>
+                    <div>
+                        <p class="text-lg font-bold text-gray-900">{{ settings.MONTHLY_AI_USAGE.input_tokens + settings.MONTHLY_AI_USAGE.output_tokens }}</p>
+                        <p class="text-xs text-gray-500">Tokens tracked</p>
+                    </div>
+                    <div>
+                        <p class="text-lg font-bold text-gray-900">{{ settings.MONTHLY_AI_USAGE.operations }}</p>
+                        <p class="text-xs text-gray-500">AI operations</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="mb-5">
+                <h2 class="text-base font-semibold text-gray-900">
+                    <i class="fa-solid fa-gauge-high text-blue-500 mr-2"></i>Performance
+                </h2>
+                <p class="mt-1 text-xs text-gray-500">Controls repository fetching and AI input sampling.</p>
+            </div>
+
+            <label class="flex items-start justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <span>
+                    <span class="block text-sm font-medium text-gray-900">Parallel repository fetching</span>
+                    <span class="mt-1 block text-xs text-gray-500">Fetch multiple selected repositories concurrently.</span>
                 </span>
-                {% else %}
-                <span class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600">
-                    <i class="fa-solid fa-circle text-[6px] mr-1.5"></i> Off
+                <span class="relative inline-flex cursor-pointer items-center">
+                    <input type="checkbox" name="parallel_processing" class="peer sr-only" {% if settings.PARALLEL_PROCESSING %}checked{% endif %}>
+                    <span class="h-6 w-11 rounded-full bg-gray-300 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-blue-600 peer-checked:after:translate-x-5"></span>
                 </span>
-                {% endif %}
+            </label>
+
+            <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <label for="max_workers" class="block text-xs font-semibold uppercase tracking-wider text-gray-500">Max workers</label>
+                    <input id="max_workers" name="max_workers" type="number" min="1" max="32" required
+                           value="{{ settings.MAX_WORKERS }}"
+                           class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label for="batch_size" class="block text-xs font-semibold uppercase tracking-wider text-gray-500">AI input batch size</label>
+                    <input id="batch_size" name="batch_size" type="number" min="1" max="1000" required
+                           value="{{ settings.BATCH_SIZE }}"
+                           class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                </div>
             </div>
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">Budget Limit</span>
-                <span class="text-sm font-semibold text-gray-900">${{ settings.AI_BUDGET_LIMIT }}</span>
+        </section>
+
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="mb-5">
+                <h2 class="text-base font-semibold text-gray-900">
+                    <i class="fa-solid fa-list-check text-gray-500 mr-2"></i>Logging
+                </h2>
+                <p class="mt-1 text-xs text-gray-500">Choose how much diagnostic detail the application records.</p>
             </div>
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">Max Tokens</span>
-                <span class="text-sm font-mono text-gray-700">{{ settings.AI_MAX_TOKENS }}</span>
+
+            <label for="log_level" class="block text-xs font-semibold uppercase tracking-wider text-gray-500">Log level</label>
+            <select id="log_level" name="log_level"
+                    class="mt-2 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                {% for level in ["DEBUG", "INFO", "WARNING", "ERROR"] %}
+                <option value="{{ level }}" {% if settings.LOG_LEVEL == level %}selected{% endif %}>{{ level }}</option>
+                {% endfor %}
+            </select>
+            <div class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-xs text-gray-600">
+                <p><strong>INFO</strong> is recommended for normal use.</p>
+                <p class="mt-1"><strong>DEBUG</strong> records additional details useful while troubleshooting.</p>
             </div>
-        </div>
+        </section>
     </div>
 
-    <!-- Performance -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 class="text-base font-semibold text-gray-900 mb-4">
-            <i class="fa-solid fa-gauge-high text-blue-500 mr-2"></i>Performance
-        </h2>
-        <div class="space-y-4">
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">Parallel Processing</span>
-                {% if settings.PARALLEL_PROCESSING %}
-                <span class="inline-flex items-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">On</span>
-                {% else %}
-                <span class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600">Off</span>
-                {% endif %}
-            </div>
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">Max Workers</span>
-                <span class="text-sm font-mono text-gray-700">{{ settings.MAX_WORKERS }}</span>
-            </div>
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">Batch Size</span>
-                <span class="text-sm font-mono text-gray-700">{{ settings.BATCH_SIZE }}</span>
-            </div>
-        </div>
+    <div class="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <p class="text-sm text-blue-800">
+            <i class="fa-solid fa-circle-info mr-2 text-blue-500"></i>
+            Changes affect newly created clients and jobs. Jobs already running keep the settings they started with.
+        </p>
+        <button type="submit"
+                class="inline-flex shrink-0 items-center justify-center rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800">
+            Save changes
+        </button>
     </div>
-
-    <!-- System -->
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 class="text-base font-semibold text-gray-900 mb-4">
-            <i class="fa-solid fa-server text-gray-500 mr-2"></i>System
-        </h2>
-        <div class="space-y-4">
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">Environment</span>
-                <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium
-                    {% if settings.ENVIRONMENT == 'production' %}bg-red-50 text-red-700{% else %}bg-amber-50 text-amber-700{% endif %}">
-                    {{ settings.ENVIRONMENT }}
-                </span>
-            </div>
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">Log Level</span>
-                <span class="text-sm font-mono text-gray-700">{{ settings.LOG_LEVEL }}</span>
-            </div>
-            <div class="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5 border border-gray-200">
-                <span class="text-sm text-gray-700">WhatsApp</span>
-                {% if settings.WHATSAPP_ENABLED %}
-                <span class="inline-flex items-center rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">Enabled</span>
-                {% else %}
-                <span class="inline-flex items-center rounded-full bg-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600">Disabled</span>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
-    <div class="flex">
-        <i class="fa-solid fa-circle-info text-blue-400 mt-0.5"></i>
-        <div class="ml-3">
-            <p class="text-sm text-blue-700">
-                To modify settings, edit the <code class="bg-blue-100 px-1.5 py-0.5 rounded text-xs">.env</code> file in the project root and restart the GUI server.
-            </p>
-        </div>
-    </div>
-</div>
+</form>
 {% endblock %}

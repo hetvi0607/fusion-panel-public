@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}AMC Defaults - Example Company{% endblock %}
+
+{% block content %}
+<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex items-start gap-3">
+        <a href="/amc" class="mt-1 text-gray-400 hover:text-gray-600"><i class="fa-solid fa-arrow-left"></i></a>
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">AMC Defaults</h1>
+            <p class="mt-1 text-sm text-gray-500">Set the commercial terms reused in each new annual maintenance contract.</p>
+        </div>
+    </div>
+    <a href="/settings/company"
+       class="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <i class="fa-solid fa-building mr-2 text-teal-600"></i>My Company Details
+    </a>
+</div>
+
+<form method="POST" action="/amc/settings" class="space-y-6">
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-4">
+            <i class="fa-solid fa-scale-balanced text-teal-600 mr-2"></i>Standard Commercial Terms
+        </h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Term (months)</label>
+                <input type="number" min="1" name="term_months" value="{{ defaults.term_months }}" required class="field">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Notice Period (days)</label>
+                <input type="number" min="0" name="notice_period_days" value="{{ defaults.notice_period_days }}" class="field">
+            </div>
+            <div class="sm:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Payment Schedule</label>
+                <input name="payment_schedule" value="{{ defaults.payment_schedule }}" required class="field">
+            </div>
+            <div class="sm:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Default Response Time</label>
+                <input name="default_response_time" value="{{ defaults.default_response_time }}" class="field">
+            </div>
+            <div class="sm:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Renewal Policy</label>
+                <input name="renewal_policy" value="{{ defaults.renewal_policy }}" class="field">
+            </div>
+            <div class="sm:col-span-2">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Jurisdiction</label>
+                <input name="jurisdiction" value="{{ defaults.jurisdiction }}" class="field">
+            </div>
+        </div>
+    </div>
+
+    <div class="flex justify-end">
+        <button class="rounded-xl bg-teal-600 px-6 py-3 text-sm font-semibold text-white hover:bg-teal-500">
+            <i class="fa-solid fa-floppy-disk mr-2"></i>Save AMC Defaults
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block head %}
+<style>
+.field { display:block; width:100%; border:1px solid #d1d5db; border-radius:.5rem; padding:.5rem .75rem; font-size:.875rem; }
+.field:focus { outline:none; border-color:#14b8a6; box-shadow:0 0 0 1px #14b8a6; }
+</style>
+{% endblock %}

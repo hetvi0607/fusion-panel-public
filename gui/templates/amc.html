@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}AI AMC Generator - Example Company{% endblock %}
+
+{% block content %}
+<div class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">AI AMC Generator</h1>
+        <p class="mt-1 text-sm text-gray-500">Give Claude the commercial facts; review and refine the complete agreement before export.</p>
+    </div>
+    <a href="/amc/settings"
+       class="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <i class="fa-solid fa-sliders mr-2 text-teal-600"></i> AMC Defaults
+    </a>
+</div>
+
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+    <form method="POST" action="/amc/generate" class="xl:col-span-2 space-y-6">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="flex items-start justify-between gap-4 mb-5">
+                <div>
+                    <h2 class="text-base font-semibold text-gray-900">
+                        <i class="fa-solid fa-wand-magic-sparkles text-teal-600 mr-2"></i>Necessary Details
+                    </h2>
+                    <p class="text-xs text-gray-500 mt-1">Claude will draft the scope, service levels, exclusions and clauses.</p>
+                </div>
+                <span class="rounded-full bg-teal-50 px-3 py-1 text-xs font-medium text-teal-700">AI-first</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Client / Vendor <span class="text-red-400">*</span></label>
+                    <select name="client_id" id="client_id" required onchange="fillFromClient(this)"
+                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+                        <option value="">Select a saved client</option>
+                        {% for client in clients %}
+                        <option value="{{ client.id }}" data-website="{{ client.website or '' }}">{{ client.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">
+                        Missing party details can be completed in <a href="/settings/clients" class="text-teal-700 hover:underline">Clients</a>.
+                    </p>
+                </div>
+
+                <div class="md:col-span-2">
+                    <div class="mb-3 flex items-center justify-between gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">
+                                Maintenance Items <span class="text-red-400">*</span>
+                            </label>
+                            <p class="mt-1 text-xs text-gray-500">Add every website, application, product, or infrastructure item covered by this AMC.</p>
+                        </div>
+                        <button type="button" onclick="addMaintenanceItem()"
+                                class="inline-flex shrink-0 items-center rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-100">
+                            <i class="fa-solid fa-plus mr-1.5"></i>Add item
+                        </button>
+                    </div>
+                    <input type="hidden" name="maintenance_item_count" id="maintenance-item-count" value="1">
+                    <div id="maintenance-items" class="space-y-3">
+                        <div class="maintenance-item rounded-lg border border-gray-200 bg-gray-50 p-4">
+                            <div class="mb-3 flex items-center justify-between">
+                                <span class="maintenance-number text-xs font-semibold uppercase tracking-wider text-gray-500">Item 1</span>
+                                <button type="button" onclick="removeMaintenanceItem(this)"
+                                        class="remove-maintenance hidden text-xs font-medium text-red-600 hover:text-red-700">
+                                    <i class="fa-solid fa-trash mr-1"></i>Remove
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-1 gap-3 lg:grid-cols-12">
+                                <div class="lg:col-span-3">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Maintenance Type</label>
+                                    <select name="maintenance_type_0" required
+                                            class="maintenance-type block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+                                        <option>Website Maintenance</option>
+                                        <option>Web Application Maintenance</option>
+                                        <option>Mobile Application Maintenance</option>
+                                        <option>Software Maintenance</option>
+                                        <option>Infrastructure Maintenance</option>
+                                        <option>General IT Maintenance</option>
+                                    </select>
+                                </div>
+                                <div class="lg:col-span-5">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Project / Asset Name</label>
+                                    <input type="text" name="maintenance_name_0" required
+                                           placeholder="e.g. Animal Help Foundation Website"
+                                           class="maintenance-name block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+                                </div>
+                                <div class="lg:col-span-4">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">URL <span class="font-normal text-gray-400">(optional)</span></label>
+                                    <input type="url" name="maintenance_url_0" placeholder="https://example.com"
+                                           class="maintenance-url block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Effective Date <span class="text-red-400">*</span></label>
+                    <input type="date" name="effective_date" value="{{ default_effective_date }}" required
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+                    <p class="mt-1 text-xs text-gray-500">{{ defaults.term_months }}-month term calculated automatically.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Annual Fee <span class="text-red-400">*</span></label>
+                    <input type="number" name="annual_fee" min="0.01" step="0.01" required placeholder="15000"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                    <select name="currency"
+                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+                        <option value="INR">INR - Indian Rupee</option>
+                        <option value="USD">USD - US Dollar</option>
+                        <option value="EUR">EUR - Euro</option>
+                        <option value="GBP">GBP - Pound Sterling</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Special Context <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <textarea name="scope_hint" rows="3"
+                              placeholder="One sentence is enough, e.g. Includes routine updates, backups and minor content changes; new features are billed separately."
+                              class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border resize-y"></textarea>
+                </div>
+            </div>
+
+            {% if repos %}
+            <details class="mt-5 rounded-lg border border-gray-200 bg-gray-50">
+                <summary class="cursor-pointer px-4 py-3 text-sm font-medium text-gray-700">
+                    <i class="fa-solid fa-code-branch mr-2 text-gray-400"></i>Use repository names as project context
+                    <span class="text-xs text-gray-400 font-normal">(optional)</span>
+                </summary>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 border-t border-gray-200 p-4">
+                    {% for repo in repos %}
+                    <label class="flex items-center rounded-md bg-white border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                        <input type="checkbox" name="repositories" value="{{ repo.repo }}:{{ repo.branch }}"
+                               class="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                        <span class="ml-2 truncate">{{ repo.repo }} <span class="text-gray-400">({{ repo.branch }})</span></span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+        </div>
+
+        <button type="submit"
+                class="w-full flex items-center justify-center rounded-xl bg-teal-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 transition-colors">
+            <i class="fa-solid fa-wand-magic-sparkles mr-2"></i> Generate AI Draft
+        </button>
+    </form>
+
+    <div class="space-y-6">
+        <div class="rounded-xl border border-teal-200 bg-teal-50 p-5">
+            <h3 class="text-sm font-semibold text-teal-900 mb-3">What Claude handles</h3>
+            <ul class="text-xs text-teal-800 space-y-2">
+                <li><i class="fa-solid fa-check mr-2"></i>Maintenance scope and exclusions</li>
+                <li><i class="fa-solid fa-check mr-2"></i>Service commitments and responsibilities</li>
+                <li><i class="fa-solid fa-check mr-2"></i>Payment, confidentiality and IP clauses</li>
+                <li><i class="fa-solid fa-check mr-2"></i>Termination, remedies and notices</li>
+                <li><i class="fa-solid fa-check mr-2"></i>Consistency and missing-information review</li>
+            </ul>
+        </div>
+
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-5">
+            <h3 class="text-sm font-semibold text-amber-900 mb-2">
+                <i class="fa-solid fa-shield-halved mr-2"></i>Human approval required
+            </h3>
+            <p class="text-xs text-amber-800">Claude cannot sign or send the agreement. Dates, parties and price remain locked facts, and the DOCX is exported only after you confirm review.</p>
+        </div>
+    </div>
+</div>
+
+<div class="mt-10 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h2 class="text-base font-semibold text-gray-900">AMC History</h2>
+        <span class="text-xs text-gray-400">{{ contracts|length }} contracts</span>
+    </div>
+    {% if contracts %}
+    <div class="divide-y divide-gray-100">
+        {% for contract in contracts %}
+        <div class="px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                    <p class="text-sm font-semibold text-gray-900 truncate">{{ contract.client_name }}</p>
+                    <span class="rounded-full px-2 py-0.5 text-[11px] font-medium
+                        {% if contract.status == 'exported' %}bg-green-100 text-green-700
+                        {% elif contract.status == 'error' %}bg-red-100 text-red-700
+                        {% elif contract.status == 'drafting' %}bg-blue-100 text-blue-700
+                        {% else %}bg-amber-100 text-amber-700{% endif %}">
+                        {{ contract.status|title }}
+                    </span>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">
+                    {% if contract.input_data.facts.maintenance_items %}
+                    {{ contract.input_data.facts.maintenance_items|map(attribute='asset_name')|join(', ') }}
+                    {% else %}
+                    {{ contract.input_data.facts.asset_name }}
+                    {% endif %}
+                    · {{ contract.input_data.facts.effective_date_display }}
+                    · {{ contract.input_data.facts.currency }} {{ contract.input_data.facts.annual_fee }}
+                </p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                {% if contract.draft %}
+                <a href="/amc/{{ contract.id }}" class="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Review</a>
+                {% endif %}
+                {% if contract.output_filename %}
+                <a href="/amc/download/{{ contract.output_filename }}" class="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-500">Download</a>
+                {% endif %}
+                <form method="POST" action="/amc/{{ contract.id }}/renew">
+                    <button class="rounded-md border border-teal-200 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50">Renew</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="px-6 py-10 text-center text-sm text-gray-500">No AMCs generated yet.</div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fillFromClient(select) {
+    const option = select.options[select.selectedIndex];
+    const url = option ? option.dataset.website : '';
+    const field = document.querySelector('.maintenance-url');
+    if (url && !field.value) field.value = url;
+}
+
+const maintenanceTypes = [
+    'Website Maintenance',
+    'Web Application Maintenance',
+    'Mobile Application Maintenance',
+    'Software Maintenance',
+    'Infrastructure Maintenance',
+    'General IT Maintenance'
+];
+
+function addMaintenanceItem() {
+    const container = document.getElementById('maintenance-items');
+    const item = document.createElement('div');
+    item.className = 'maintenance-item rounded-lg border border-gray-200 bg-gray-50 p-4';
+    item.innerHTML = `
+        <div class="mb-3 flex items-center justify-between">
+            <span class="maintenance-number text-xs font-semibold uppercase tracking-wider text-gray-500"></span>
+            <button type="button" onclick="removeMaintenanceItem(this)"
+                    class="remove-maintenance text-xs font-medium text-red-600 hover:text-red-700">
+                <i class="fa-solid fa-trash mr-1"></i>Remove
+            </button>
+        </div>
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12">
+            <div class="lg:col-span-3">
+                <label class="block text-xs font-medium text-gray-600 mb-1">Maintenance Type</label>
+                <select required class="maintenance-type block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+                    ${maintenanceTypes.map(type => `<option>${type}</option>`).join('')}
+                </select>
+            </div>
+            <div class="lg:col-span-5">
+                <label class="block text-xs font-medium text-gray-600 mb-1">Project / Asset Name</label>
+                <input type="text" required placeholder="e.g. Customer Mobile App"
+                       class="maintenance-name block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+            </div>
+            <div class="lg:col-span-4">
+                <label class="block text-xs font-medium text-gray-600 mb-1">URL <span class="font-normal text-gray-400">(optional)</span></label>
+                <input type="url" placeholder="https://example.com"
+                       class="maintenance-url block w-full rounded-lg border-gray-300 bg-white shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm px-3 py-2 border">
+            </div>
+        </div>`;
+    container.appendChild(item);
+    syncMaintenanceItems();
+}
+
+function removeMaintenanceItem(button) {
+    const items = document.querySelectorAll('.maintenance-item');
+    if (items.length <= 1) return;
+    button.closest('.maintenance-item').remove();
+    syncMaintenanceItems();
+}
+
+function syncMaintenanceItems() {
+    const items = Array.from(document.querySelectorAll('.maintenance-item'));
+    items.forEach((item, index) => {
+        item.querySelector('.maintenance-number').textContent = `Item ${index + 1}`;
+        item.querySelector('.maintenance-type').name = `maintenance_type_${index}`;
+        item.querySelector('.maintenance-name').name = `maintenance_name_${index}`;
+        item.querySelector('.maintenance-url').name = `maintenance_url_${index}`;
+        item.querySelector('.remove-maintenance').classList.toggle('hidden', items.length === 1);
+    });
+    document.getElementById('maintenance-item-count').value = items.length;
+}
+</script>
+{% endblock %}
