@@ -300,6 +300,7 @@ Commits:
         output_path: str,
         per_hour_rate: float = 0,
         currency: str = "INR",
+        pricing_mode: str = "hourly",
         from_info: Optional[Dict[str, str]] = None,
         footer_info: Optional[Dict[str, str]] = None,
         logo_path: Optional[str] = None,
@@ -307,12 +308,15 @@ Commits:
         """Create the DOCX invoice file.
 
         Args:
-            work_details: list of {"category", "hours", "items"} dicts
+            work_details: list of {"category", "hours", "items"} dicts for
+                hourly invoices, or {"category", "amount", "items"} dicts for
+                fixed-rate invoices
             bill_to: {"name", "address_line1", "address_line2"} for recipient
             invoice_meta: {"invoice_no", "po_number", "invoice_for", "date_submitted"}
             output_path: where to save the .docx
             per_hour_rate: rate per hour for total amount calculation
             currency: "INR" or "USD"
+            pricing_mode: "hourly" or "fixed"
             from_info: override sender info (defaults to DEFAULT_FROM)
             footer_info: override footer info (defaults to DEFAULT_FOOTER)
             logo_path: path to company logo image (defaults to gui/static/logo.png)
@@ -353,7 +357,13 @@ Commits:
         self._add_billing_section(doc, bill_to, invoice_meta)
 
         # ===== WORK DETAILS TABLE =====
-        self._add_work_details_table(doc, work_details, per_hour_rate, currency)
+        self._add_work_details_table(
+            doc,
+            work_details,
+            per_hour_rate,
+            currency,
+            pricing_mode,
+        )
 
         # ===== FOOTER =====
         self._add_footer(doc, footer)
@@ -486,9 +496,17 @@ Commits:
 
         doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
-    def _add_work_details_table(self, doc: Document, work_details: List[Dict[str, Any]],
-                                  per_hour_rate: float = 0, currency: str = "INR"):
-        """Build the SR. NO. | ON ACCOUNT OF | HOURS table with totals."""
+    def _add_work_details_table(
+        self,
+        doc: Document,
+        work_details: List[Dict[str, Any]],
+        per_hour_rate: float = 0,
+        currency: str = "INR",
+        pricing_mode: str = "hourly",
+    ):
+        """Build the invoice line-items table and its totals."""
+        is_fixed = pricing_mode == "fixed"
+        value_heading = "AMOUNT" if is_fixed else "HOURS"
         # Heading
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -516,7 +534,11 @@ Commits:
         tblPr.append(parse_xml(
             f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'
         ))
-        col_widths = [Inches(0.4), Inches(5.5), Inches(0.6)]
+        col_widths = (
+            [Inches(0.6), Inches(4.6), Inches(1.3)]
+            if is_fixed
+            else [Inches(0.4), Inches(5.5), Inches(0.6)]
+        )
         for row in table.rows:
             for i, width in enumerate(col_widths):
                 tc = row.cells[i]._tc
@@ -528,7 +550,7 @@ Commits:
 
         # Header row
         hdr = table.rows[0]
-        for idx, text in enumerate(["SR. NO.", "ON ACCOUNT OF", "HOURS"]):
+        for idx, text in enumerate(["SR. NO.", "ON ACCOUNT OF", value_heading]):
             cell = hdr.cells[idx]
             p = cell.paragraphs[0]
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -539,6 +561,8 @@ Commits:
 
         # Data rows
         total_hours = 0
+        total_amount = 0.0
+        sym = CURRENCY_SYMBOLS.get(currency, "\u20b9")
         for i, detail in enumerate(work_details):
             row = table.rows[i + 1]
 
@@ -559,6 +583,8 @@ Commits:
 
             hours = detail.get("hours", 0)
             total_hours += hours
+            amount = float(detail.get("amount", 0) or 0)
+            total_amount += amount
 
             # Bullet items
             for item_text in detail.get("items", []):
@@ -569,13 +595,36 @@ Commits:
                 br = bp.add_run(item_text)
                 br.font.size = Pt(9)
 
-            # HOURS
+            # HOURS / AMOUNT
             c2 = row.cells[2]
             p2 = c2.paragraphs[0]
             p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            r2 = p2.add_run(str(hours))
+            value = f"{sym}{amount:,.2f}" if is_fixed else str(hours)
+            r2 = p2.add_run(value)
             r2.font.size = Pt(10)
             r2.bold = True
+
+        if is_fixed:
+            # Total Amount row
+            amt_row = table.add_row()
+            amt_row.cells[0].merge(amt_row.cells[1])
+            am_cell = amt_row.cells[0]
+            pam = am_cell.paragraphs[0]
+            pam.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            ram = pam.add_run("Total Amount: ")
+            ram.bold = True
+            ram.font.size = Pt(11)
+
+            av_cell = amt_row.cells[2]
+            pav = av_cell.paragraphs[0]
+            pav.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            rav = pav.add_run(f"{sym}{total_amount:,.2f}")
+            rav.bold = True
+            rav.font.size = Pt(12)
+
+            self._add_amount_in_words(doc, total_amount, currency)
+            doc.add_paragraph().paragraph_format.space_after = Pt(8)
+            return
 
         # Total Hours row
         total_row = table.add_row()
@@ -611,7 +660,6 @@ Commits:
             rv_cell = rate_row.cells[2]
             prv = rv_cell.paragraphs[0]
             prv.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            sym = CURRENCY_SYMBOLS.get(currency, "\u20b9")
             rrv = prv.add_run(f"{sym}{per_hour_rate:,.0f}")
             rrv.font.size = Pt(10)
             rrv.bold = True
@@ -633,19 +681,27 @@ Commits:
             rav.bold = True
             rav.font.size = Pt(12)
 
-            # Amount in words
-            words_p = doc.add_paragraph()
-            words_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            words_p.paragraph_format.space_before = Pt(6)
-            words_p.paragraph_format.space_after = Pt(2)
-            wr = words_p.add_run("Amount in Words: ")
-            wr.bold = True
-            wr.font.size = Pt(9)
-            wv = words_p.add_run(amount_in_words(total_amount, currency))
-            wv.italic = True
-            wv.font.size = Pt(9)
+            self._add_amount_in_words(doc, total_amount, currency)
 
         doc.add_paragraph().paragraph_format.space_after = Pt(8)
+
+    def _add_amount_in_words(
+        self,
+        doc: Document,
+        total_amount: float,
+        currency: str,
+    ):
+        """Add the invoice total as words below the line-items table."""
+        words_p = doc.add_paragraph()
+        words_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        words_p.paragraph_format.space_before = Pt(6)
+        words_p.paragraph_format.space_after = Pt(2)
+        wr = words_p.add_run("Amount in Words: ")
+        wr.bold = True
+        wr.font.size = Pt(9)
+        wv = words_p.add_run(amount_in_words(total_amount, currency))
+        wv.italic = True
+        wv.font.size = Pt(9)
 
     def _add_footer(self, doc: Document, footer: Dict[str, str]):
         """Add footer with address, website, phone, email."""

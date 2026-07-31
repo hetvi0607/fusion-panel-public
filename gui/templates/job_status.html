@@ -61,8 +61,19 @@
                 {% endif %}
                 {% if job.result.categories %}
                 <div class="flex justify-between text-sm">
-                    <span class="text-gray-500">Work Categories</span>
+                    <span class="text-gray-500">
+                        {% if job.result.service_count is defined %}Services
+                        {% else %}Work Categories{% endif %}
+                    </span>
                     <span class="font-semibold text-gray-900">{{ job.result.categories }}</span>
+                </div>
+                {% endif %}
+                {% if job.result.total_amount is defined %}
+                <div class="flex justify-between text-sm">
+                    <span class="text-gray-500">Invoice Total</span>
+                    <span class="font-semibold text-gray-900">
+                        {% if job.result.currency == 'USD' %}${% else %}₹{% endif %}{{ "{:,.2f}".format(job.result.total_amount) }}
+                    </span>
                 </div>
                 {% endif %}
                 {% if job.result.invoice_filename %}

@@ -14,6 +14,7 @@ import json
 import threading
 import time
 import logging
+import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import calendar
@@ -552,87 +553,134 @@ def invoice_page():
                            default_end=default_end)
 
 
-def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
-                    bill_to, invoice_meta, per_hour_rate, currency):
+def run_invoice_job(
+    job_id,
+    start_date,
+    end_date,
+    selected_repos,
+    repo_labels,
+    bill_to,
+    invoice_meta,
+    per_hour_rate,
+    currency,
+    invoice_type="development",
+    service_items=None,
+):
     """Background worker that generates an invoice DOCX."""
     jobs[job_id]['status'] = 'running'
     jobs[job_id]['progress'] = 'Initializing...'
     try:
-        db = get_db()
-        github_client = GitHubClient()
-        ai_allowed, ai_reason = _ai_availability(db)
-        invoice_gen = InvoiceGenerator(enable_ai=ai_allowed)
-        if not ai_allowed:
-            jobs[job_id]['log'].append(f"AI categorization skipped: {ai_reason}")
-
-        # 1. Fetch commits
-        all_commits = _fetch_selected_commits(
-            job=jobs[job_id],
-            github_client=github_client,
-            selected_repos=selected_repos,
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-        if not all_commits:
-            jobs[job_id]['status'] = 'done'
-            jobs[job_id]['progress'] = 'No commits found'
-            jobs[job_id]['result'] = {'total_commits': 0}
-            return
-
-        # 2. Fetch commit stats (additions/deletions/files) for accurate hour estimation
-        jobs[job_id]['progress'] = f"Fetching code stats for {len(all_commits)} commits..."
-        def stats_progress(current, total):
-            jobs[job_id]['progress'] = f"Fetching code stats ({current}/{total})..."
-        github_client.fetch_commit_stats(all_commits, progress_callback=stats_progress)
-        total_additions = sum(c.get('stats', {}).get('additions', 0) for c in all_commits)
-        total_deletions = sum(c.get('stats', {}).get('deletions', 0) for c in all_commits)
-        jobs[job_id]['log'].append(
-            f"Code stats: +{total_additions} additions, -{total_deletions} deletions across {len(all_commits)} commits"
-        )
-
-        # 3. AI categorization (with code stats for accurate hour estimation)
-        if ai_allowed:
-            jobs[job_id]['progress'] = (
-                f"AI categorizing {len(all_commits)} commits..."
+        service_items = service_items or []
+        if invoice_type == "fixed":
+            invoice_gen = InvoiceGenerator(enable_ai=False)
+            work_details = service_items
+            all_commits = []
+            date_slug = datetime.now().strftime('%B-%Y').lower()
+            jobs[job_id]['log'].append(
+                f"Added {len(work_details)} fixed-rate service item(s)"
             )
-            try:
-                work_details = invoice_gen.categorize_commits(
-                    all_commits,
-                    repo_labels,
-                )
+        else:
+            db = get_db()
+            github_client = GitHubClient()
+            ai_allowed, ai_reason = _ai_availability(db)
+            invoice_gen = InvoiceGenerator(enable_ai=ai_allowed)
+            if not ai_allowed:
                 jobs[job_id]['log'].append(
-                    f"AI returned {len(work_details)} work categories"
+                    f"AI categorization skipped: {ai_reason}"
                 )
-            except Exception as ai_err:
-                jobs[job_id]['log'].append(
-                    f"✗ AI categorization failed: {ai_err}"
-                )
-                jobs[job_id]['log'].append(
-                    "Falling back to per-repo grouping"
-                )
-                ai_allowed = False
 
-        if not ai_allowed:
-            # Simple fallback: one category per repo with commit messages as items
-            from collections import defaultdict
-            repo_msgs = defaultdict(list)
-            for c in all_commits:
-                repo_msgs[c.get("repo_name", "unknown")].append(c.get("message", ""))
-            work_details = [
-                {
-                    "category": repo_labels.get(repo, repo),
-                    "hours": max(1, len(msgs) // 5),
-                    "items": msgs[:8],
-                }
-                for repo, msgs in repo_msgs.items()
-            ]
+            # 1. Fetch commits
+            all_commits = _fetch_selected_commits(
+                job=jobs[job_id],
+                github_client=github_client,
+                selected_repos=selected_repos,
+                start_date=start_date,
+                end_date=end_date,
+            )
 
-        # 3. Generate DOCX
+            if not all_commits:
+                jobs[job_id]['status'] = 'done'
+                jobs[job_id]['progress'] = 'No commits found'
+                jobs[job_id]['result'] = {'total_commits': 0}
+                return
+
+            # 2. Fetch stats for accurate hour estimation
+            jobs[job_id]['progress'] = (
+                f"Fetching code stats for {len(all_commits)} commits..."
+            )
+
+            def stats_progress(current, total):
+                jobs[job_id]['progress'] = (
+                    f"Fetching code stats ({current}/{total})..."
+                )
+
+            github_client.fetch_commit_stats(
+                all_commits,
+                progress_callback=stats_progress,
+            )
+            total_additions = sum(
+                c.get('stats', {}).get('additions', 0)
+                for c in all_commits
+            )
+            total_deletions = sum(
+                c.get('stats', {}).get('deletions', 0)
+                for c in all_commits
+            )
+            jobs[job_id]['log'].append(
+                f"Code stats: +{total_additions} additions, "
+                f"-{total_deletions} deletions across "
+                f"{len(all_commits)} commits"
+            )
+
+            # 3. AI categorization
+            if ai_allowed:
+                jobs[job_id]['progress'] = (
+                    f"AI categorizing {len(all_commits)} commits..."
+                )
+                try:
+                    work_details = invoice_gen.categorize_commits(
+                        all_commits,
+                        repo_labels,
+                    )
+                    jobs[job_id]['log'].append(
+                        f"AI returned {len(work_details)} work categories"
+                    )
+                except Exception as ai_err:
+                    jobs[job_id]['log'].append(
+                        f"✗ AI categorization failed: {ai_err}"
+                    )
+                    jobs[job_id]['log'].append(
+                        "Falling back to per-repo grouping"
+                    )
+                    ai_allowed = False
+
+            if not ai_allowed:
+                # Simple fallback: one category per repository.
+                from collections import defaultdict
+                repo_msgs = defaultdict(list)
+                for c in all_commits:
+                    repo_msgs[c.get("repo_name", "unknown")].append(
+                        c.get("message", "")
+                    )
+                work_details = [
+                    {
+                        "category": repo_labels.get(repo, repo),
+                        "hours": max(1, len(msgs) // 5),
+                        "items": msgs[:8],
+                    }
+                    for repo, msgs in repo_msgs.items()
+                ]
+            date_slug = datetime.strptime(
+                start_date,
+                '%Y-%m-%d',
+            ).strftime('%B-%Y').lower()
+
+        # 4. Generate DOCX
         jobs[job_id]['progress'] = 'Generating DOCX invoice...'
         invoices_dir = get_invoices_dir()
-        date_slug = datetime.strptime(start_date, '%Y-%m-%d').strftime('%B-%Y').lower()
-        invoice_no = invoice_meta.get('invoice_no', 'draft')
+        invoice_no = secure_filename(
+            invoice_meta.get('invoice_no', '')
+        ) or 'draft'
         filename = f"invoice_{invoice_no}_{date_slug}.docx"
         output_path = os.path.join(invoices_dir, filename)
 
@@ -643,24 +691,45 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
             output_path=output_path,
             per_hour_rate=per_hour_rate,
             currency=currency,
+            pricing_mode=(
+                "fixed" if invoice_type == "fixed" else "hourly"
+            ),
         )
 
         usage = invoice_gen.get_usage_stats()
-        if usage["total_tokens"]:
+        if invoice_type == "development" and usage["total_tokens"]:
             _record_ai_usage(db, "invoice_categorization", usage)
-        jobs[job_id]['log'].append(
-            f"Invoice generated \u2013 cost: ${usage['estimated_cost']:.4f}, tokens: {usage['total_tokens']}"
-        )
+        if invoice_type == "development":
+            jobs[job_id]['log'].append(
+                f"Invoice generated \u2013 cost: "
+                f"${usage['estimated_cost']:.4f}, "
+                f"tokens: {usage['total_tokens']}"
+            )
+        else:
+            jobs[job_id]['log'].append("✓ Fixed-rate invoice generated")
 
         jobs[job_id]['status'] = 'done'
         jobs[job_id]['progress'] = 'Complete'
-        jobs[job_id]['result'] = {
-            'total_commits': len(all_commits),
+        result = {
             'invoice_path': output_path,
             'invoice_filename': filename,
-            'date_range': f"{start_date} to {end_date}",
             'categories': len(work_details),
         }
+        if invoice_type == "fixed":
+            result.update({
+                'service_count': len(work_details),
+                'total_amount': sum(
+                    float(item.get("amount", 0))
+                    for item in work_details
+                ),
+                'currency': currency,
+            })
+        else:
+            result.update({
+                'total_commits': len(all_commits),
+                'date_range': f"{start_date} to {end_date}",
+            })
+        jobs[job_id]['result'] = result
     except Exception as e:
         jobs[job_id]['status'] = 'error'
         jobs[job_id]['progress'] = f"Error: {e}"
@@ -669,29 +738,92 @@ def run_invoice_job(job_id, start_date, end_date, selected_repos, repo_labels,
 
 @app.route("/invoice", methods=["POST"])
 def generate_invoice():
+    invoice_type = request.form.get(
+        "invoice_type",
+        "development",
+    ).strip().lower()
+    if invoice_type not in ("development", "fixed"):
+        invoice_type = "development"
+
     start_date = request.form.get("start_date")
     end_date = request.form.get("end_date")
-    selected_repo_ids = request.form.getlist("repos")
-
-    db = get_db()
-    all_repos = db.get_repositories(enabled_only=True)
-
-    if selected_repo_ids:
-        selected_repos = [r for r in all_repos if f"{r['repo']}:{r['branch']}" in selected_repo_ids]
-    else:
-        selected_repos = all_repos
-
-    if not selected_repos:
-        flash("No repositories selected.", "error")
-        return redirect(url_for("invoice_page"))
-
-    # Collect repo labels from form
+    selected_repos = []
     repo_labels = {}
-    for r in selected_repos:
-        key = f"label_{r['repo']}:{r['branch']}"
-        label = request.form.get(key, "").strip()
-        if label:
-            repo_labels[r['repo']] = label
+    service_items = []
+
+    if invoice_type == "development":
+        selected_repo_ids = request.form.getlist("repos")
+        db = get_db()
+        all_repos = db.get_repositories(enabled_only=True)
+
+        if selected_repo_ids:
+            selected_repos = [
+                r for r in all_repos
+                if f"{r['repo']}:{r['branch']}" in selected_repo_ids
+            ]
+        else:
+            selected_repos = all_repos
+
+        if not selected_repos:
+            flash("No repositories selected.", "error")
+            return redirect(url_for("invoice_page"))
+
+        # Collect repository labels from form.
+        for repo in selected_repos:
+            key = f"label_{repo['repo']}:{repo['branch']}"
+            label = request.form.get(key, "").strip()
+            if label:
+                repo_labels[repo['repo']] = label
+    else:
+        service_names = request.form.getlist("service_name[]")
+        service_descriptions = request.form.getlist(
+            "service_description[]"
+        )
+        service_amounts = request.form.getlist("service_amount[]")
+        for index, name in enumerate(service_names):
+            name = name.strip()
+            description = (
+                service_descriptions[index].strip()
+                if index < len(service_descriptions)
+                else ""
+            )
+            raw_amount = (
+                service_amounts[index].strip()
+                if index < len(service_amounts)
+                else ""
+            )
+            if not name and not description and not raw_amount:
+                continue
+            try:
+                amount = float(raw_amount)
+            except (TypeError, ValueError):
+                flash(
+                    f"Enter a valid amount for service item {index + 1}.",
+                    "error",
+                )
+                return redirect(url_for("invoice_page"))
+            if not name:
+                flash(
+                    f"Enter a service name for item {index + 1}.",
+                    "error",
+                )
+                return redirect(url_for("invoice_page"))
+            if not math.isfinite(amount) or amount <= 0:
+                flash(
+                    f"Service amount must be greater than zero "
+                    f"for item {index + 1}.",
+                    "error",
+                )
+                return redirect(url_for("invoice_page"))
+            service_items.append({
+                "category": name,
+                "items": [description] if description else [],
+                "amount": amount,
+            })
+
+        if not service_items:
+            flash("Add at least one fixed-rate service.", "error")
+            return redirect(url_for("invoice_page"))
 
     # Per hour rate and currency
     try:
@@ -730,7 +862,8 @@ def generate_invoice():
     thread = threading.Thread(
         target=run_invoice_job,
         args=(job_id, start_date, end_date, selected_repos, repo_labels,
-              bill_to, invoice_meta, per_hour_rate, currency),
+              bill_to, invoice_meta, per_hour_rate, currency,
+              invoice_type, service_items),
         daemon=True,
     )
     thread.start()
