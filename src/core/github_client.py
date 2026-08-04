@@ -41,10 +41,20 @@ class GitHubClient:
             "Accept": "application/vnd.github+json"
         }
         self.api_base_url = "https://api.github.com"
-        
+
+        # Use a pooled Session so concurrent/sequential requests reuse
+        # connections instead of paying a fresh TCP+TLS handshake every
+        # call (which was the dominant source of latency for bulk checks
+        # like the dashboard's "active repositories" computation).
+        self.session = requests.Session()
+        self.session.headers.update(self.headers)
+        adapter = requests.adapters.HTTPAdapter(pool_connections=32, pool_maxsize=32)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+
         # Test the connection
         try:
-            response = requests.get(f"{self.api_base_url}/user", headers=self.headers)
+            response = self.session.get(f"{self.api_base_url}/user")
             response.raise_for_status()
             self.authenticated_user = response.json().get("login")
             logger.info(f"GitHub client initialized as user: {self.authenticated_user}")
@@ -62,7 +72,7 @@ class GitHubClient:
             Repository data as dictionary
         """
         try:
-            response = requests.get(f"{self.api_base_url}/repos/{repo_name}", headers=self.headers)
+            response = self.session.get(f"{self.api_base_url}/repos/{repo_name}")
             response.raise_for_status()
             return response.json()
         except RequestException as e:
@@ -71,7 +81,7 @@ class GitHubClient:
     
     def _handle_rate_limit(self):
         """Handle GitHub API rate limiting."""
-        rate_limit = requests.get(f"{self.api_base_url}/rate_limit", headers=self.headers)
+        rate_limit = self.session.get(f"{self.api_base_url}/rate_limit")
         rate_limit.raise_for_status()
         rate_limit_data = rate_limit.json()
         reset_time = datetime.strptime(rate_limit_data['rate']['reset'], "%Y-%m-%dT%H:%M:%SZ")
@@ -121,7 +131,7 @@ class GitHubClient:
                     params["sha"] = branch
                     logger.info(f"Fetching commits from branch: {branch}")
                 
-                response = requests.get(url, headers=self.headers, params=params)
+                response = self.session.get(url, params=params)
                 response.raise_for_status()
                 commits_page = response.json()
                 
@@ -232,7 +242,7 @@ class GitHubClient:
             
             # Get commit details with files information
             url = f"{self.api_base_url}/repos/{repo_name}/commits/{commit_sha}"
-            response = requests.get(url, headers=self.headers)
+            response = self.session.get(url)
             response.raise_for_status()
             commit_data = response.json()
             
@@ -278,7 +288,7 @@ class GitHubClient:
 
             try:
                 url = f"{self.api_base_url}/repos/{repo_name}/commits/{sha}"
-                response = requests.get(url, headers=self.headers)
+                response = self.session.get(url)
                 response.raise_for_status()
                 data = response.json()
 
@@ -312,6 +322,67 @@ class GitHubClient:
 
         return commits
 
+    def list_branches(self, repo_name: str) -> List[str]:
+        """List all branch names for a repository.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+
+        Returns:
+            List of branch names. Empty list on error.
+        """
+        branches = []
+        page = 1
+        per_page = 100
+        try:
+            while True:
+                url = f"{self.api_base_url}/repos/{repo_name}/branches"
+                response = self.session.get(
+                    url,
+                    params={"page": page, "per_page": per_page},
+                )
+                response.raise_for_status()
+                page_branches = response.json()
+                if not page_branches:
+                    break
+                for b in page_branches:
+                    branches.append(b.get("name"))
+                if len(page_branches) < per_page:
+                    break
+                page += 1
+                time.sleep(0.05)
+        except RequestException as e:
+            logger.error(f"Error listing branches for {repo_name}: {e}")
+        return branches
+
+    def has_commits_since(self, repo_name: str, branch: str, since_date: str) -> bool:
+        """Check whether a branch has any commits on or after since_date.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            branch: Branch name
+            since_date: ISO date string YYYY-MM-DD
+
+        Returns:
+            True if at least one commit exists in the range, False otherwise.
+        """
+        try:
+            url = f"{self.api_base_url}/repos/{repo_name}/commits"
+            response = self.session.get(
+                url,
+                params={
+                    "sha": branch,
+                    "since": f"{since_date}T00:00:00Z",
+                    "per_page": 1,
+                },
+            )
+            response.raise_for_status()
+            return len(response.json()) > 0
+        except RequestException as e:
+            logger.warning(f"Error checking recent commits for {repo_name}@{branch}: {e}")
+            return False
+
     def close(self):
         """Close the GitHub client connection."""
+        self.session.close()
         logger.info("GitHub client connection closed")

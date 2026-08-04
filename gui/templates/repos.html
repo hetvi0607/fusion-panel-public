@@ -22,6 +22,7 @@
             <tr>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Repository</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Branch</th>
+                <th class="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Activity</th>
                 <th class="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Enabled</th>
                 <th class="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">AI</th>
                 <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
@@ -45,6 +46,21 @@
                     <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
                         <i class="fa-solid fa-code-branch mr-1 text-[10px]"></i>{{ repo.branch }}
                     </span>
+                </td>
+                <td class="px-6 py-4 text-center" data-repo-activity="{{ repo.repo }}">
+                    {% if active_repos_status == 'ready' %}
+                        {% if repo.repo in active_repo_names %}
+                        <span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700">
+                            <i class="fa-solid fa-bolt mr-1 text-[10px]"></i> Active
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-500">Inactive</span>
+                        {% endif %}
+                    {% elif active_repos_status == 'error' %}
+                    <span class="text-xs text-gray-400">Unavailable</span>
+                    {% else %}
+                    <i class="fa-solid fa-spinner fa-spin text-gray-300"></i>
+                    {% endif %}
                 </td>
                 <td class="px-6 py-4 text-center">
                     {% if repo.enabled %}
@@ -195,6 +211,39 @@
 
 {% block scripts %}
 <script>
+{% if active_repos_status != 'ready' %}
+(function () {
+    var attempts = 0;
+    function poll() {
+        attempts += 1;
+        fetch('/api/active-repos')
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (data.status === 'ready') {
+                    var activeSet = {};
+                    (data.repos || []).forEach(function (r) { activeSet[r] = true; });
+                    document.querySelectorAll('[data-repo-activity]').forEach(function (cell) {
+                        var repo = cell.getAttribute('data-repo-activity');
+                        cell.innerHTML = activeSet[repo]
+                            ? '<span class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700"><i class="fa-solid fa-bolt mr-1 text-[10px]"></i> Active</span>'
+                            : '<span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-1 text-xs font-medium text-gray-500">Inactive</span>';
+                    });
+                } else if (data.status === 'error') {
+                    document.querySelectorAll('[data-repo-activity]').forEach(function (cell) {
+                        cell.innerHTML = '<span class="text-xs text-gray-400">Unavailable</span>';
+                    });
+                } else if (attempts < 60) {
+                    setTimeout(poll, 2000);
+                }
+            })
+            .catch(function () {
+                if (attempts < 60) setTimeout(poll, 2000);
+            });
+    }
+    setTimeout(poll, 1500);
+})();
+{% endif %}
+
 function openEditModal(repo, branch, enabled, aiEnabled) {
     document.getElementById('edit-repo-name').value = repo;
     document.getElementById('edit-branch').value = branch;

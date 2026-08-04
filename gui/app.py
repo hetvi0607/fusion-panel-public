@@ -67,6 +67,131 @@ logger = logging.getLogger(__name__)
 jobs = {}
 
 
+# Background computation of the dashboard's "active repositories" stat.
+# Hitting the GitHub API (branches + per-branch commit checks) synchronously
+# during a page load is slow, so this is always computed in a background
+# thread; the dashboard renders immediately and polls a small JSON endpoint
+# for the result.
+_ACTIVE_REPOS_TTL_SECONDS = 5 * 60  # 5 minutes
+_active_repos_lock = threading.Lock()
+_active_repos_state = {
+    "status": "idle",       # idle | computing | ready | error
+    "count": None,
+    "total": None,
+    "active_repos": None,   # sorted list of active repo names, once ready
+    "computed_at": 0.0,
+    "repos_key": None,
+}
+
+
+def _compute_active_repositories(repo_names):
+    """Return the set of repo names with any commit on any branch in the last 30 days.
+
+    Flattens (repo, branch) pairs and checks them with a large thread pool so
+    wall-clock time depends on network latency, not on the number of
+    repos/branches processed sequentially. Errors are treated as "not active".
+    """
+    if not repo_names:
+        return set()
+
+    try:
+        client = GitHubClient()
+    except Exception as exc:
+        logger.warning("Could not initialise GitHub client for active-repo check: %s", exc)
+        return set()
+
+    from datetime import datetime, timedelta
+    since_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    try:
+        # Step 1: list branches for every repo in parallel.
+        branch_map = {}
+        with ThreadPoolExecutor(max_workers=min(len(repo_names), 20) or 1) as executor:
+            futures = {executor.submit(client.list_branches, r): r for r in repo_names}
+            for fut in as_completed(futures):
+                repo_name = futures[fut]
+                try:
+                    branch_map[repo_name] = fut.result() or []
+                except Exception as exc:
+                    logger.warning("Could not list branches for %s: %s", repo_name, exc)
+                    branch_map[repo_name] = []
+
+        # Step 2: check all (repo, branch) pairs in parallel, maximizing
+        # concurrency since these are cheap, independent HTTP calls.
+        active = set()
+        active_lock = threading.Lock()
+        pairs = [(r, b) for r, branches in branch_map.items() for b in branches]
+
+        def check_pair(pair):
+            repo_name, branch = pair
+            if repo_name in active:
+                return  # already known active; best-effort skip
+            try:
+                if client.has_commits_since(repo_name, branch, since_date):
+                    with active_lock:
+                        active.add(repo_name)
+            except Exception as exc:
+                logger.warning("Active-repo check failed for %s@%s: %s", repo_name, branch, exc)
+
+        if pairs:
+            with ThreadPoolExecutor(max_workers=min(len(pairs), 30) or 1) as executor:
+                list(executor.map(check_pair, pairs))
+
+        return active
+    finally:
+        client.close()
+
+
+def _active_repos_worker(repo_names):
+    try:
+        active = _compute_active_repositories(repo_names)
+        with _active_repos_lock:
+            _active_repos_state.update({
+                "status": "ready",
+                "count": len(active),
+                "total": len(repo_names),
+                "active_repos": sorted(active),
+                "computed_at": time.time(),
+                "repos_key": frozenset(repo_names),
+            })
+    except Exception as exc:
+        logger.warning("Active-repo computation failed: %s", exc)
+        with _active_repos_lock:
+            _active_repos_state.update({
+                "status": "error",
+                "computed_at": time.time(),
+                "repos_key": frozenset(repo_names),
+            })
+
+
+def _get_active_repos_state(repo_names):
+    """Return the current active-repos state, kicking off a background
+    recompute if the cache is stale, missing, or the repo set changed.
+    Never blocks on GitHub API calls.
+    """
+    repo_names = list(repo_names)
+    key = frozenset(repo_names)
+    now = time.time()
+
+    with _active_repos_lock:
+        state = dict(_active_repos_state)
+        fresh = (
+            state["status"] == "ready"
+            and state["repos_key"] == key
+            and (now - state["computed_at"]) < _ACTIVE_REPOS_TTL_SECONDS
+        )
+        already_computing = state["status"] == "computing" and state["repos_key"] == key
+        if not fresh and not already_computing:
+            _active_repos_state["status"] = "computing"
+            _active_repos_state["repos_key"] = key
+            state = dict(_active_repos_state)
+            threading.Thread(
+                target=_active_repos_worker, args=(repo_names,), daemon=True
+            ).start()
+
+    return state
+
+
 def get_db():
     return RepositoryDB()
 
@@ -312,32 +437,40 @@ _load_saved_runtime_settings()
 def dashboard():
     db = get_db()
     repos = db.get_repositories(enabled_only=False)
-    enabled_count = sum(1 for r in repos if r['enabled'])
-    
-    # Count reports
-    reports_dir = get_reports_dir()
-    report_months = []
-    if os.path.isdir(reports_dir):
-        for item in sorted(os.listdir(reports_dir), reverse=True):
-            item_path = os.path.join(reports_dir, item)
-            if os.path.isdir(item_path) and item not in ('.DS_Store',):
-                all_commits = os.path.join(item_path, "all_commits.csv")
-                commit_count = 0
-                if os.path.exists(all_commits):
-                    with open(all_commits, 'r', encoding='utf-8') as f:
-                        commit_count = max(sum(1 for _ in f) - 1, 0)  # subtract header
-                report_months.append({
-                    'name': item,
-                    'path': item_path,
-                    'commit_count': commit_count,
-                })
+    clients = db.get_clients()
+
+    # Unique repository names (a repo may have multiple tracked branches).
+    unique_repo_names = sorted({r["repo"] for r in repos})
+    total_repos = len(unique_repo_names)
+    total_clients = len(clients)
+
+    # Active repositories: any commit on any branch in the last 30 days.
+    # This never blocks the page load — it kicks off a background
+    # computation (if needed) and the template polls /api/active-repos
+    # for the result.
+    state = _get_active_repos_state(unique_repo_names)
 
     return render_template("dashboard.html",
-                           total_repos=len(repos),
-                           enabled_repos=enabled_count,
-                           report_months=report_months,
-                           ai_enabled=app_config.AI_ENABLED,
-                           jobs=jobs)
+                           total_clients=total_clients,
+                           total_repos=total_repos,
+                           active_repos_status=state["status"],
+                           active_repos=state["count"] if state["status"] == "ready" else None,
+                           active_repos_list=state["active_repos"] if state["status"] == "ready" else None)
+
+
+@app.route("/api/active-repos")
+def api_active_repos():
+    """Poll endpoint for the async active-repositories computation."""
+    db = get_db()
+    repos = db.get_repositories(enabled_only=False)
+    unique_repo_names = sorted({r["repo"] for r in repos})
+    state = _get_active_repos_state(unique_repo_names)
+    return jsonify({
+        "status": state["status"],
+        "count": state["count"],
+        "total": state["total"] if state["total"] is not None else len(unique_repo_names),
+        "repos": state["active_repos"] if state["status"] == "ready" else [],
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -509,7 +642,15 @@ def job_status_api(job_id):
 def repos_page():
     db = get_db()
     repos = db.get_repositories(enabled_only=False)
-    return render_template("repos.html", repos=repos)
+    unique_repo_names = sorted({r["repo"] for r in repos})
+    state = _get_active_repos_state(unique_repo_names)
+    active_set = set(state["active_repos"]) if state["status"] == "ready" else set()
+    return render_template(
+        "repos.html",
+        repos=repos,
+        active_repos_status=state["status"],
+        active_repo_names=active_set,
+    )
 
 
 @app.route("/repos")

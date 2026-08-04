@@ -8,138 +8,157 @@
 </div>
 
 <!-- Stats Cards -->
-<div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-    <!-- Repositories -->
+<div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+    <!-- Total Clients -->
     <div class="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200">
-        <div class="p-5">
+        <div class="p-6">
             <div class="flex items-center">
                 <div class="flex-shrink-0 rounded-lg bg-indigo-50 p-3">
-                    <i class="fa-solid fa-code-branch text-indigo-600 text-xl"></i>
+                    <i class="fa-solid fa-users text-indigo-600 text-xl"></i>
                 </div>
                 <div class="ml-5">
-                    <p class="text-sm font-medium text-gray-500">Repositories</p>
-                    <p class="text-2xl font-bold text-gray-900">{{ enabled_repos }}<span class="text-sm font-normal text-gray-400"> / {{ total_repos }}</span></p>
+                    <p class="text-sm font-medium text-gray-500">Total Clients</p>
+                    <p class="text-3xl font-bold text-gray-900">{{ total_clients }}</p>
                 </div>
             </div>
         </div>
-        <div class="bg-gray-50 px-5 py-3">
-            <a href="/settings/repositories" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">Manage repositories →</a>
+        <div class="bg-gray-50 px-6 py-3">
+            <a href="/settings/clients" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">Manage clients →</a>
         </div>
     </div>
 
-    <!-- Reports -->
+    <!-- Total Repositories -->
     <div class="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200">
-        <div class="p-5">
+        <div class="p-6">
+            <div class="flex items-center">
+                <div class="flex-shrink-0 rounded-lg bg-sky-50 p-3">
+                    <i class="fa-solid fa-code-branch text-sky-600 text-xl"></i>
+                </div>
+                <div class="ml-5">
+                    <p class="text-sm font-medium text-gray-500">Total Repositories</p>
+                    <p class="text-3xl font-bold text-gray-900">{{ total_repos }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="bg-gray-50 px-6 py-3">
+            <a href="/settings/repositories" class="text-sm font-medium text-sky-600 hover:text-sky-500">Manage repositories →</a>
+        </div>
+    </div>
+
+    <!-- Active Repositories -->
+    <div class="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200">
+        <div class="p-6">
             <div class="flex items-center">
                 <div class="flex-shrink-0 rounded-lg bg-emerald-50 p-3">
-                    <i class="fa-solid fa-file-csv text-emerald-600 text-xl"></i>
+                    <i class="fa-solid fa-bolt text-emerald-600 text-xl"></i>
                 </div>
                 <div class="ml-5">
-                    <p class="text-sm font-medium text-gray-500">Report Months</p>
-                    <p class="text-2xl font-bold text-gray-900">{{ report_months | length }}</p>
-                </div>
-            </div>
-        </div>
-        <div class="bg-gray-50 px-5 py-3">
-            <a href="/reports" class="text-sm font-medium text-emerald-600 hover:text-emerald-500">View reports →</a>
-        </div>
-    </div>
-
-    <!-- AI Status -->
-    <div class="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200">
-        <div class="p-5">
-            <div class="flex items-center">
-                <div class="flex-shrink-0 rounded-lg bg-purple-50 p-3">
-                    <i class="fa-solid fa-robot text-purple-600 text-xl"></i>
-                </div>
-                <div class="ml-5">
-                    <p class="text-sm font-medium text-gray-500">AI Analysis</p>
-                    <p class="text-2xl font-bold {% if ai_enabled %}text-green-600{% else %}text-gray-400{% endif %}">
-                        {% if ai_enabled %}Enabled{% else %}Disabled{% endif %}
+                    <p id="active-repos-value" class="text-3xl font-bold text-gray-900">
+                        {% if active_repos_status == 'ready' %}
+                        {{ active_repos }}<span class="text-sm font-normal text-gray-400"> / {{ total_repos }}</span>
+                        {% elif active_repos_status == 'error' %}
+                        <span class="text-gray-400 text-base font-medium">Unavailable</span>
+                        {% else %}
+                        <i class="fa-solid fa-spinner fa-spin text-gray-300 text-xl"></i>
+                        {% endif %}
                     </p>
+                    <p class="mt-0.5 text-xs text-gray-400">Commits in the last 30 days</p>
                 </div>
             </div>
         </div>
-        <div class="bg-gray-50 px-5 py-3">
-            <a href="/settings" class="text-sm font-medium text-purple-600 hover:text-purple-500">Settings →</a>
-        </div>
-    </div>
-
-    <!-- Quick Action -->
-    <div class="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-200">
-        <div class="p-5">
-            <div class="flex items-center">
-                <div class="flex-shrink-0 rounded-lg bg-amber-50 p-3">
-                    <i class="fa-solid fa-bolt text-amber-600 text-xl"></i>
-                </div>
-                <div class="ml-5">
-                    <p class="text-sm font-medium text-gray-500">Quick Action</p>
-                    <p class="text-lg font-semibold text-gray-900">Generate</p>
-                </div>
-            </div>
-        </div>
-        <div class="bg-gray-50 px-5 py-3">
-            <a href="/generate" class="text-sm font-medium text-amber-600 hover:text-amber-500">New report →</a>
+        <div class="bg-gray-50 px-6 py-3">
+            <button id="active-repos-toggle" onclick="toggleActiveReposList()"
+                    class="text-sm font-medium text-emerald-600 hover:text-emerald-500 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    {% if active_repos_status != 'ready' %}disabled{% endif %}>
+                <span id="active-repos-toggle-label">View list</span> <i class="fa-solid fa-chevron-down ml-1 text-[10px]"></i>
+            </button>
         </div>
     </div>
 </div>
 
-<!-- Recent Reports -->
-<div class="bg-white rounded-xl shadow-sm border border-gray-200">
+<!-- Active Repositories List -->
+<div id="active-repos-list-panel" class="hidden mt-5 bg-white rounded-xl shadow-sm border border-gray-200">
     <div class="px-6 py-4 border-b border-gray-200">
-        <h2 class="text-lg font-semibold text-gray-900">Recent Reports</h2>
+        <h2 class="text-lg font-semibold text-gray-900">Active Repositories</h2>
+        <p class="text-xs text-gray-500">Repositories with at least one commit on any branch in the last 30 days</p>
     </div>
-    {% if report_months %}
-    <ul class="divide-y divide-gray-200">
-        {% for month in report_months[:5] %}
-        <li class="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
+    <ul id="active-repos-list" class="divide-y divide-gray-200">
+        {% if active_repos_list %}
+        {% for repo in active_repos_list %}
+        <li class="px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
             <div class="flex items-center">
-                <div class="flex-shrink-0 rounded-lg bg-gray-100 p-2.5">
-                    <i class="fa-solid fa-calendar-days text-gray-500"></i>
-                </div>
-                <div class="ml-4">
-                    <p class="text-sm font-semibold text-gray-900 capitalize">{{ month.name.replace('-', ' ') }}</p>
-                    <p class="text-xs text-gray-500">{{ month.commit_count }} commits</p>
-                </div>
+                <i class="fa-brands fa-github text-gray-400 mr-3"></i>
+                <span class="text-sm font-medium text-gray-900">{{ repo }}</span>
             </div>
-            <a href="/reports" class="inline-flex items-center rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors">
-                View <i class="fa-solid fa-arrow-right ml-1.5 text-[10px]"></i>
+            <a href="https://github.com/{{ repo }}" target="_blank" class="text-xs text-indigo-500 hover:text-indigo-400">
+                View on GitHub <i class="fa-solid fa-up-right-from-square text-[9px]"></i>
             </a>
         </li>
         {% endfor %}
+        {% else %}
+        <li class="px-6 py-8 text-center text-sm text-gray-500">No active repositories in the last 30 days.</li>
+        {% endif %}
     </ul>
-    {% else %}
-    <div class="px-6 py-12 text-center">
-        <i class="fa-solid fa-inbox text-gray-300 text-4xl mb-3"></i>
-        <p class="text-sm text-gray-500">No reports generated yet.</p>
-        <a href="/generate" class="mt-3 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-500">Generate your first report →</a>
-    </div>
-    {% endif %}
 </div>
+{% endblock %}
 
-<!-- Active Jobs -->
-{% set active_jobs = [] %}
-{% for jid, j in jobs.items() if j.status in ('queued', 'running') %}
-    {% if active_jobs.append((jid, j)) %}{% endif %}
-{% endfor %}
-{% if active_jobs %}
-<div class="mt-6 bg-white rounded-xl shadow-sm border border-amber-200">
-    <div class="px-6 py-4 border-b border-amber-200 bg-amber-50 rounded-t-xl">
-        <h2 class="text-lg font-semibold text-amber-800"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Active Jobs</h2>
-    </div>
-    <ul class="divide-y divide-gray-200">
-        {% for jid, j in active_jobs %}
-        <li class="px-6 py-4">
-            <div class="flex items-center justify-between">
-                <div>
-                    <p class="text-sm font-medium text-gray-900">{{ jid }}</p>
-                    <p class="text-xs text-gray-500">{{ j.progress }}</p>
-                </div>
-                <a href="/job/{{ jid }}" class="text-sm font-medium text-indigo-600 hover:text-indigo-500">View →</a>
-            </div>
-        </li>
-        {% endfor %}
-    </ul>
-</div>
+{% block scripts %}
+<script>
+function toggleActiveReposList() {
+    var panel = document.getElementById('active-repos-list-panel');
+    var label = document.getElementById('active-repos-toggle-label');
+    var hidden = panel.classList.toggle('hidden');
+    label.textContent = hidden ? 'View list' : 'Hide list';
+}
+
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function renderActiveReposList(repos) {
+    var list = document.getElementById('active-repos-list');
+    if (!repos || repos.length === 0) {
+        list.innerHTML = '<li class="px-6 py-8 text-center text-sm text-gray-500">No active repositories in the last 30 days.</li>';
+        return;
+    }
+    list.innerHTML = repos.map(function (repo) {
+        var safe = escapeHtml(repo);
+        return '<li class="px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors">' +
+            '<div class="flex items-center"><i class="fa-brands fa-github text-gray-400 mr-3"></i>' +
+            '<span class="text-sm font-medium text-gray-900">' + safe + '</span></div>' +
+            '<a href="https://github.com/' + encodeURIComponent(repo).replace(/%2F/g, '/') + '" target="_blank" class="text-xs text-indigo-500 hover:text-indigo-400">' +
+            'View on GitHub <i class="fa-solid fa-up-right-from-square text-[9px]"></i></a></li>';
+    }).join('');
+}
+
+{% if active_repos_status != 'ready' %}
+(function () {
+    var el = document.getElementById('active-repos-value');
+    var toggle = document.getElementById('active-repos-toggle');
+    var attempts = 0;
+    function poll() {
+        attempts += 1;
+        fetch('/api/active-repos')
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (data.status === 'ready') {
+                    el.innerHTML = data.count + '<span class="text-sm font-normal text-gray-400"> / ' + data.total + '</span>';
+                    toggle.disabled = false;
+                    renderActiveReposList(data.repos);
+                } else if (data.status === 'error') {
+                    el.innerHTML = '<span class="text-gray-400 text-base font-medium">Unavailable</span>';
+                } else if (attempts < 60) {
+                    setTimeout(poll, 2000);
+                }
+            })
+            .catch(function () {
+                if (attempts < 60) setTimeout(poll, 2000);
+            });
+    }
+    setTimeout(poll, 1500);
+})();
 {% endif %}
+</script>
 {% endblock %}
