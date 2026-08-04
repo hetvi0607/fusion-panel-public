@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Backup & Restore - Example Company{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-900">Backup & Restore</h1>
+    <p class="mt-1 text-sm text-gray-500">
+        Download the encrypted database or import one from another machine.
+        The database is encrypted with AES-256 via SQLCipher; importing requires the encryption password.
+    </p>
+</div>
+
+<!-- Encryption status banner -->
+{% if enc_state.sqlcipher_available and info.exists %}
+<div class="mb-6 rounded-lg border {% if info.encrypted %}border-green-200 bg-green-50{% else %}border-amber-200 bg-amber-50{% endif %} p-4">
+    <div class="flex items-center gap-3">
+        <i class="fa-solid {% if info.encrypted %}fa-shield-halved text-green-600{% else %}fa-shield-exclamation text-amber-600{% endif %} text-lg"></i>
+        <div>
+            <p class="text-sm font-semibold {% if info.encrypted %}text-green-800{% else %}text-amber-800{% endif %}">
+                {% if info.encrypted %}Database is encrypted (AES-256){% else %}Database is NOT encrypted{% endif %}
+            </p>
+            <p class="text-xs {% if info.encrypted %}text-green-600{% else %}text-amber-600{% endif %}">
+                {% if info.encrypted %}
+                    Protected by SQLCipher. Password stored in macOS Keychain.
+                {% else %}
+                    Set up an encryption password to protect your data at rest.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+</div>
+{% elif not enc_state.sqlcipher_available %}
+<div class="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <p class="text-sm font-semibold text-amber-800">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i>sqlcipher3 not installed
+    </p>
+    <p class="text-xs text-amber-600 mt-1">
+        Encryption is unavailable. Install with <code>pip3 install sqlcipher3</code>.
+        Backup and restore still work with plain (unencrypted) databases.
+    </p>
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <!-- Current DB summary -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-4">
+            <i class="fa-solid fa-database text-indigo-500 mr-2"></i>Current Database
+        </h2>
+        {% if info.exists %}
+            <dl class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                    <dt class="text-gray-500">File</dt>
+                    <dd class="font-mono text-gray-900 text-right break-all">{{ info.path }}</dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-gray-500">Size</dt>
+                    <dd class="text-gray-900">{{ info.size_kb }} KB</dd>
+                </div>
+                <div class="flex justify-between">
+                    <dt class="text-gray-500">Encryption</dt>
+                    <dd class="text-gray-900">
+                        {% if info.encrypted %}
+                            <span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                                <i class="fa-solid fa-lock mr-1"></i>Encrypted
+                            </span>
+                        {% else %}
+                            <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                <i class="fa-solid fa-lock-open mr-1"></i>Plaintext
+                            </span>
+                        {% endif %}
+                    </dd>
+                </div>
+            </dl>
+            <div class="mt-5">
+                <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Tables</p>
+                <div class="overflow-hidden rounded-lg border border-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Table</th>
+                                <th class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Rows</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 bg-white">
+                            {% for table, count in info.tables.items() %}
+                            <tr>
+                                <td class="px-4 py-2 font-mono text-gray-900">{{ table }}</td>
+                                <td class="px-4 py-2 text-right text-gray-700">{{ count if count is not none else "—" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="mt-5">
+                <a href="{{ url_for('backup_download') }}"
+                   class="inline-flex items-center justify-center rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-800">
+                    <i class="fa-solid fa-download mr-2"></i>Download {% if info.encrypted %}encrypted {% endif %}DB
+                </a>
+            </div>
+        {% else %}
+            <p class="text-sm text-gray-500">No database file exists yet. It will be created automatically on first use.</p>
+        {% endif %}
+    </section>
+
+    <!-- Import -->
+    <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 class="text-base font-semibold text-gray-900 mb-1">
+            <i class="fa-solid fa-file-import text-amber-500 mr-2"></i>Import Database
+        </h2>
+        <p class="text-xs text-gray-500 mb-4">
+            Upload a <span class="font-mono">.db</span> file from another machine.
+            If the file is encrypted, enter the password that was used to encrypt it.
+            The current database will be backed up before being replaced.
+        </p>
+        <form method="POST" action="{{ url_for('backup_restore') }}"
+              enctype="multipart/form-data"
+              onsubmit="return confirm('This will REPLACE the current database with the uploaded file. The current DB will be backed up first. Continue?');">
+            <label for="db_file" class="block">
+                <span class="block text-sm font-medium text-gray-700 mb-1">Database file</span>
+                <input id="db_file" name="db_file" type="file" accept=".db,.sqlite,.sqlite3"
+                       required
+                       class="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-200">
+            </label>
+            <div class="mt-4">
+                <label for="import_password" class="block text-sm font-medium text-gray-700 mb-1">
+                    Encryption password
+                    <span class="text-xs font-normal text-gray-400">(required if the file is encrypted)</span>
+                </label>
+                <input id="import_password" name="import_password" type="password" autocomplete="off"
+                       placeholder="Enter the password used to encrypt this DB"
+                       class="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+            </div>
+            <div class="mt-5 flex items-center justify-end">
+                <button type="submit"
+                        class="inline-flex items-center justify-center rounded-lg bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-amber-500">
+                    <i class="fa-solid fa-upload mr-2"></i>Import &amp; Replace
+                </button>
+            </div>
+        </form>
+    </section>
+</div>
+
+<!-- Change encryption password -->
+{% if enc_state.sqlcipher_available and info.encrypted %}
+<section class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <h2 class="text-base font-semibold text-gray-900 mb-1">
+        <i class="fa-solid fa-key text-purple-500 mr-2"></i>Change Encryption Password
+    </h2>
+    <p class="text-xs text-gray-500 mb-4">
+        Changes the SQLCipher key for the live database. The new password will be stored in your macOS Keychain.
+    </p>
+    <form method="POST" action="{{ url_for('change_encryption_password') }}" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div>
+            <label for="current_password" class="block text-sm font-medium text-gray-700 mb-1">Current password</label>
+            <input id="current_password" name="current_password" type="password" required
+                   class="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+        </div>
+        <div>
+            <label for="new_password" class="block text-sm font-medium text-gray-700 mb-1">New password</label>
+            <input id="new_password" name="new_password" type="password" required minlength="6"
+                   class="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+        </div>
+        <div>
+            <label for="confirm_password" class="block text-sm font-medium text-gray-700 mb-1">Confirm new</label>
+            <input id="confirm_password" name="confirm_password" type="password" required
+                   class="block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+        </div>
+        <div class="sm:col-span-3 flex justify-end">
+            <button type="submit"
+                    class="inline-flex items-center justify-center rounded-lg bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-purple-500">
+                <i class="fa-solid fa-rotate-key mr-2"></i>Change Password
+            </button>
+        </div>
+    </form>
+</section>
+{% endif %}
+
+<!-- Backups -->
+{% if backups %}
+<section class="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <h2 class="text-base font-semibold text-gray-900 mb-4">
+        <i class="fa-solid fa-clock-rotate-left text-gray-500 mr-2"></i>Saved Backups
+    </h2>
+    <div class="overflow-hidden rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">File</th>
+                    <th class="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wider text-gray-500">Size</th>
+                    <th class="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Created</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 bg-white">
+                {% for b in backups %}
+                <tr>
+                    <td class="px-4 py-2 font-mono text-gray-900 break-all">{{ b.name }}</td>
+                    <td class="px-4 py-2 text-right text-gray-700">{{ b.size_kb }} KB</td>
+                    <td class="px-4 py-2 text-gray-700">{{ b.mtime }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p class="mt-3 text-xs text-gray-500">
+        Backups are stored next to the live database in <span class="font-mono">data/</span>.
+        Encrypted backups require the same password to import. Remove unwanted ones manually.
+    </p>
+</section>
+{% endif %}
+{% endblock %}

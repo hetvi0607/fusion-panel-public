@@ -58,6 +58,15 @@
                                 <i class="fa-solid fa-gear mr-1"></i> Settings
                             </a>
                         </div>
+                        <div class="flex shrink-0 items-center 2xl:ml-4">
+                            <form method="POST" action="{{ url_for('logout') }}" class="inline">
+                                <button type="submit"
+                                        class="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white"
+                                        title="Log out">
+                                    <i class="fa-solid fa-arrow-right-from-bracket mr-1"></i> Logout
+                                </button>
+                            </form>
+                        </div>
                     </div>
                 </div>
             </div>

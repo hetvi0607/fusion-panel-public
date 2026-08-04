@@ -12,5 +12,8 @@ tqdm==4.66.1
 tabulate==0.8.10
 flask>=3.0.0
 python-docx>=1.0.0
+sqlcipher3>=0.5.0
+keyring>=25.0.0
 # WhatsApp Business API - uses requests library already included above
 # Note: SQLite is built into Python, no additional package needed
+# Note: sqlcipher3 provides AES-256 encryption for the database at rest

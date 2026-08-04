@@ -28,5 +28,15 @@
                   {% if request.path.startswith('/settings/company') %}bg-gray-900 text-white{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
             <i class="fa-solid fa-briefcase mr-2"></i>My Company Details
         </a>
+        <a href="{{ url_for('backup_page') }}"
+           class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold transition-colors
+                  {% if request.path.startswith('/settings/backup') %}bg-gray-900 text-white{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+            <i class="fa-solid fa-database mr-2"></i>Backup &amp; Restore
+        </a>
+        <a href="{{ url_for('setup_login_password') }}"
+           class="inline-flex items-center rounded-lg px-4 py-2 text-sm font-semibold transition-colors
+                  {% if request.path == '/settings/login-password' %}bg-gray-900 text-white{% else %}text-gray-600 hover:bg-gray-100 hover:text-gray-900{% endif %}">
+            <i class="fa-solid fa-user-shield mr-2"></i>Login Password
+        </a>
     </nav>
 </div>

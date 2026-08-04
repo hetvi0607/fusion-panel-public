@@ -4,13 +4,43 @@ Repository database module for managing GitHub repository configurations.
 
 This module provides functionality to store and retrieve repository configurations
 from a SQLite database instead of environment variables.
+
+When ``sqlcipher3`` is installed and an encryption password is available (via
+``db_security``), the database is transparently encrypted at rest with AES-256.
+If ``sqlcipher3`` is not installed the module falls back to plain ``sqlite3``.
 """
-import sqlite3
 import os
+import shutil
 import logging
 import json
+import binascii
+from datetime import datetime
+
+try:
+    import sqlcipher3 as _db_module
+    _HAS_SQLCIPHER = True
+except ImportError:
+    import sqlite3 as _db_module
+    _HAS_SQLCIPHER = False
 
 logger = logging.getLogger(__name__)
+
+# Re-export common exception/row classes so the rest of the module body can
+# reference them without caring which backend is active.
+_DatabaseError = _db_module.DatabaseError
+_OperationalError = _db_module.OperationalError
+_IntegrityError = _db_module.IntegrityError
+_Row = _db_module.Row
+
+SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def is_plaintext_db(path):
+    """Return True if *path* starts with the standard SQLite header."""
+    if not os.path.isfile(path):
+        return False
+    with open(path, "rb") as fh:
+        return fh.read(16) == SQLITE_MAGIC
 
 DEFAULT_AMC_SETTINGS = {
     "provider_name": "Example Company",
@@ -33,24 +63,56 @@ DEFAULT_AMC_SETTINGS = {
 
 class RepositoryDB:
     """Manages repository configurations in SQLite database."""
-    
-    def __init__(self, db_path=None):
+
+    def __init__(self, db_path=None, password=None):
         """
         Initialize repository database.
-        
+
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file.
+            password: SQLCipher encryption password.  If None, the password
+                is automatically fetched from ``db_security`` (keyring).  If
+                no password is available and sqlcipher3 is installed, the DB
+                is opened in plaintext mode for backward compatibility.
         """
         if db_path is None:
-            # Default to data/repositories.db relative to project root
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             db_path = os.path.join(project_root, "data", "repositories.db")
         self.db_path = db_path
+
+        # Resolve encryption password.
+        if password is not None:
+            self._password = password
+        elif _HAS_SQLCIPHER:
+            from src.core.db_security import get_password
+            self._password = get_password()
+        else:
+            self._password = None
+
+        # Auto-migrate plaintext DB to encrypted if we have a password.
+        if self._password and _HAS_SQLCIPHER and is_plaintext_db(self.db_path):
+            logger.info("Auto-migrating plaintext database to encrypted.")
+            self._encrypt_in_place(self._password)
+
         self._init_database()
+
+    @property
+    def is_encrypted(self):
+        """True when this instance is using SQLCipher encryption."""
+        return self._password is not None and _HAS_SQLCIPHER
+
+    def _connect(self):
+        """Open a connection to the database, applying the encryption key
+        if one is set."""
+        conn = _db_module.connect(self.db_path)
+        if self._password and _HAS_SQLCIPHER:
+            hex_key = binascii.hexlify(self._password.encode()).decode()
+            conn.execute("PRAGMA key = \"x'{}'\"".format(hex_key))
+        return conn
     
     def _init_database(self):
         """Create the database tables if they don't exist."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         # Create repositories table
@@ -181,7 +243,7 @@ class RepositoryDB:
         Returns:
             True if added successfully, False if already exists
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         try:
@@ -193,7 +255,7 @@ class RepositoryDB:
             conn.commit()
             logger.info("Added repository: {} (branch: {})".format(repo_name, branch))
             return True
-        except sqlite3.IntegrityError:
+        except _IntegrityError:
             logger.warning("Repository already exists: {} (branch: {})".format(repo_name, branch))
             return False
         finally:
@@ -212,7 +274,7 @@ class RepositoryDB:
         Returns:
             True if updated successfully, False otherwise
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         updates = []
@@ -263,7 +325,7 @@ class RepositoryDB:
         Returns:
             True if deleted successfully, False if not found
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -292,7 +354,7 @@ class RepositoryDB:
         Returns:
             List of repository dictionaries with keys: repo, branch, enabled, ai_enabled
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         query = "SELECT repo_name, branch, enabled, ai_enabled FROM repositories"
@@ -326,7 +388,7 @@ class RepositoryDB:
         Returns:
             Repository dictionary or None if not found
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -355,7 +417,7 @@ class RepositoryDB:
         Returns:
             Number of repositories deleted
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         cursor.execute("DELETE FROM repositories")
@@ -414,7 +476,7 @@ class RepositoryDB:
         signatory_name='',
         signatory_title='',
     ):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO clients (
@@ -448,7 +510,7 @@ class RepositoryDB:
         signatory_name='',
         signatory_title='',
     ):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
             UPDATE clients
@@ -468,7 +530,7 @@ class RepositoryDB:
         return updated
 
     def delete_client(self, client_id):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM clients WHERE id=?", (client_id,))
         conn.commit()
@@ -477,8 +539,8 @@ class RepositoryDB:
         return deleted
 
     def get_clients(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._connect()
+        conn.row_factory = _Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM clients ORDER BY name")
         rows = cursor.fetchall()
@@ -486,8 +548,8 @@ class RepositoryDB:
         return [dict(r) for r in rows]
 
     def get_client(self, client_id):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._connect()
+        conn.row_factory = _Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM clients WHERE id=?", (client_id,))
         row = cursor.fetchone()
@@ -501,7 +563,7 @@ class RepositoryDB:
     def get_runtime_settings(self, defaults=None):
         """Return persisted GUI runtime overrides merged over supplied defaults."""
         settings = dict(defaults or {})
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT value_json FROM app_settings WHERE key='runtime_settings'"
@@ -519,7 +581,7 @@ class RepositoryDB:
 
     def save_runtime_settings(self, settings):
         """Persist validated GUI runtime settings."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO app_settings (key, value_json, updated_at)
@@ -532,6 +594,45 @@ class RepositoryDB:
         conn.close()
         return dict(settings)
 
+    # ------------------------------------------------------------------
+    # Login password (hashed, stored in app_settings)
+    # ------------------------------------------------------------------
+    def get_login_password_hash(self):
+        """Return the stored login password hash, or None if not set."""
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT value_json FROM app_settings WHERE key='login_password_hash'"
+        )
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            try:
+                data = json.loads(row[0])
+                return data.get("hash", "")
+            except (TypeError, json.JSONDecodeError):
+                return ""
+        return None
+
+    def set_login_password(self, password_hash):
+        """Store a login password hash."""
+        conn = self._connect()
+        cursor = conn.cursor()
+        payload = json.dumps({"hash": password_hash}, ensure_ascii=False)
+        cursor.execute("""
+            INSERT INTO app_settings (key, value_json, updated_at)
+            VALUES ('login_password_hash', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value_json=excluded.value_json,
+                updated_at=CURRENT_TIMESTAMP
+        """, (payload,))
+        conn.commit()
+        conn.close()
+
+    def has_login_password(self):
+        """Return True if a login password hash has been stored."""
+        return bool(self.get_login_password_hash())
+
     def record_ai_usage(
         self,
         feature,
@@ -540,7 +641,7 @@ class RepositoryDB:
         estimated_cost=0,
     ):
         """Record one completed AI operation for the monthly budget guardrail."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO ai_usage (
@@ -558,8 +659,8 @@ class RepositoryDB:
 
     def get_monthly_ai_usage(self):
         """Return aggregate AI usage for the current SQLite calendar month."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._connect()
+        conn.row_factory = _Row
         cursor = conn.cursor()
         cursor.execute("""
             SELECT
@@ -577,7 +678,7 @@ class RepositoryDB:
 
     def get_amc_settings(self):
         settings = dict(DEFAULT_AMC_SETTINGS)
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("SELECT value_json FROM app_settings WHERE key='amc_defaults'")
         row = cursor.fetchone()
@@ -596,7 +697,7 @@ class RepositoryDB:
         # resetting fields owned by the other.
         merged = self.get_amc_settings()
         merged.update(settings)
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO app_settings (key, value_json, updated_at)
@@ -616,7 +717,7 @@ class RepositoryDB:
         model='',
         prompt_version='',
     ):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO amc_contracts (
@@ -654,7 +755,7 @@ class RepositoryDB:
 
         updates.append("updated_at=CURRENT_TIMESTAMP")
         params.append(contract_id)
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute(
             f"UPDATE amc_contracts SET {', '.join(updates)} WHERE id=?",
@@ -666,8 +767,8 @@ class RepositoryDB:
         return updated
 
     def get_amc_contract(self, contract_id):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._connect()
+        conn.row_factory = _Row
         cursor = conn.cursor()
         cursor.execute("""
             SELECT amc_contracts.*, clients.name AS client_name
@@ -680,8 +781,8 @@ class RepositoryDB:
         return self._decode_amc_row(row)
 
     def list_amc_contracts(self, limit=50):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._connect()
+        conn.row_factory = _Row
         cursor = conn.cursor()
         cursor.execute("""
             SELECT amc_contracts.*, clients.name AS client_name
@@ -695,7 +796,7 @@ class RepositoryDB:
         return [self._decode_amc_row(row) for row in rows]
 
     def add_amc_revision(self, contract_id, draft, instruction=''):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute(
             "SELECT COALESCE(MAX(revision_no), 0) + 1 FROM amc_revisions "
@@ -719,8 +820,8 @@ class RepositoryDB:
         return revision_no
 
     def get_amc_revisions(self, contract_id):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._connect()
+        conn.row_factory = _Row
         cursor = conn.cursor()
         cursor.execute("""
             SELECT * FROM amc_revisions
@@ -751,3 +852,251 @@ class RepositoryDB:
         except (TypeError, json.JSONDecodeError):
             item["draft"] = None
         return item
+
+    # ------------------------------------------------------------------
+    # Backup & Restore
+    # ------------------------------------------------------------------
+    EXPECTED_TABLES = (
+        "repositories",
+        "clients",
+        "app_settings",
+        "amc_contracts",
+        "amc_revisions",
+        "ai_usage",
+    )
+
+    def get_db_info(self):
+        """Return summary metadata about the current database file."""
+        info = {
+            "path": self.db_path,
+            "exists": os.path.isfile(self.db_path),
+            "encrypted": False,
+            "sqlcipher_available": _HAS_SQLCIPHER,
+            "size_bytes": 0,
+            "size_kb": 0.0,
+            "tables": {},
+        }
+        if not info["exists"]:
+            return info
+        info["encrypted"] = not is_plaintext_db(self.db_path)
+        info["size_bytes"] = os.path.getsize(self.db_path)
+        info["size_kb"] = round(info["size_bytes"] / 1024, 1)
+        conn = self._connect()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            )
+            for (table,) in cursor.fetchall():
+                try:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                    info["tables"][table] = cursor.fetchone()[0]
+                except _OperationalError:
+                    info["tables"][table] = None
+        finally:
+            conn.close()
+        return info
+
+    @staticmethod
+    def validate_db_file(path, password=None):
+        """Validate that a file is a SQLite DB with the expected tables.
+
+        If *password* is provided (or the file is not plaintext), the file
+        is opened with ``sqlcipher3`` using that password.  A wrong password
+        results in a validation failure.
+
+        Returns (True, None) on success, (False, message) on failure.
+        """
+        if not os.path.isfile(path):
+            return False, "File does not exist."
+        if os.path.getsize(path) < 100:
+            return False, "File is too small to be a valid SQLite database."
+
+        plaintext = is_plaintext_db(path)
+
+        if plaintext:
+            # Plain SQLite — open read-only with the standard module.
+            import sqlite3
+            try:
+                conn = sqlite3.connect("file:{}?mode=ro".format(path), uri=True)
+            except _DatabaseError as exc:
+                return False, "Could not open as SQLite database: {}".format(exc)
+        else:
+            # Encrypted — need sqlcipher3 + password.
+            if not _HAS_SQLCIPHER:
+                return False, (
+                    "Database appears to be encrypted but sqlcipher3 is not "
+                    "installed. Install it with: pip install sqlcipher3"
+                )
+            if not password:
+                return False, (
+                    "Database is encrypted. A password is required to import it."
+                )
+            try:
+                conn = _db_module.connect(path)
+                hex_key = binascii.hexlify(password.encode()).decode()
+                conn.execute("PRAGMA key = \"x'{}'\"".format(hex_key))
+                # Force a read to verify the key is correct.
+                conn.execute("SELECT count(*) FROM sqlite_master")
+            except _DatabaseError:
+                return False, "Wrong password or corrupted database file."
+            except Exception as exc:
+                return False, "Could not open encrypted database: {}".format(exc)
+
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name NOT LIKE 'sqlite_%'"
+            )
+            found = {row[0] for row in cursor.fetchall()}
+        except _DatabaseError as exc:
+            return False, "Could not read schema: {}".format(exc)
+        finally:
+            conn.close()
+        missing = [
+            t for t in RepositoryDB.EXPECTED_TABLES if t not in found
+        ]
+        if missing:
+            return False, "Missing expected tables: {}".format(
+                ", ".join(missing)
+            )
+        return True, None
+
+    def import_db(self, source_path, password=None):
+        """Replace the current database with the one at source_path.
+
+        If *source_path* is an encrypted database, *password* is used to
+        validate it and becomes the new encryption password for the live
+        database (stored in the keyring via ``db_security``).
+
+        Backs up the existing DB to a timestamped sibling file before
+        swapping. Runs _init_database afterwards so any new columns are
+        added to the imported schema.
+
+        Returns dict with keys: ok (bool), backup_path (str), message (str).
+        """
+        ok, message = self.validate_db_file(source_path, password)
+        if not ok:
+            return {"ok": False, "backup_path": "", "message": message}
+
+        source_is_encrypted = not is_plaintext_db(source_path)
+
+        backup_path = ""
+        if os.path.isfile(self.db_path):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = "{}.backup_{}".format(self.db_path, timestamp)
+            shutil.copy2(self.db_path, backup_path)
+
+        # Copy imported file into place.
+        shutil.copy2(source_path, self.db_path)
+
+        # Update the password for future connections.
+        if source_is_encrypted and password:
+            self._password = password
+            from src.core import db_security
+            db_security.set_password(password)
+        elif is_plaintext_db(self.db_path):
+            # Imported a plaintext DB — we should encrypt it if we have a password.
+            if self._password and _HAS_SQLCIPHER:
+                self._encrypt_in_place(self._password)
+
+        try:
+            self._init_database()
+        except _DatabaseError as exc:
+            if backup_path and os.path.isfile(backup_path):
+                shutil.copy2(backup_path, self.db_path)
+            return {
+                "ok": False,
+                "backup_path": backup_path,
+                "message": "Imported DB opened but schema init failed: {}".format(
+                    exc
+                ),
+            }
+        logger.info(
+            "Database imported from %s (backup: %s)", source_path, backup_path
+        )
+        return {
+            "ok": True,
+            "backup_path": backup_path,
+            "message": "Database imported successfully.",
+        }
+
+    def _encrypt_in_place(self, password):
+        """Encrypt the current plaintext database file in-place.
+
+        Reads the plaintext DB, creates an encrypted copy, then replaces
+        the original.  No-op if the DB is already encrypted.
+        """
+        if not _HAS_SQLCIPHER or not password:
+            return
+        if not is_plaintext_db(self.db_path):
+            return  # already encrypted
+
+        import sqlite3
+        enc_path = self.db_path + ".enc_tmp"
+        try:
+            # Read plaintext dump.
+            src = sqlite3.connect(self.db_path)
+            dump = "\n".join(src.iterdump())
+            src.close()
+            # Create encrypted destination and load dump.
+            dst = _db_module.connect(enc_path)
+            hex_key = binascii.hexlify(password.encode()).decode()
+            dst.execute("PRAGMA key = \"x'{}'\"".format(hex_key))
+            dst.executescript(dump)
+            dst.commit()
+            dst.close()
+            # Replace plaintext with encrypted.
+            shutil.copy2(enc_path, self.db_path)
+        finally:
+            if os.path.isfile(enc_path):
+                os.remove(enc_path)
+
+    def migrate_to_encrypted(self, password):
+        """Migrate a plaintext database to an encrypted one.
+
+        Returns dict with keys: ok (bool), message (str).
+        """
+        if not _HAS_SQLCIPHER:
+            return {
+                "ok": False,
+                "message": "sqlcipher3 is not installed. Run: pip install sqlcipher3",
+            }
+        if not password:
+            return {"ok": False, "message": "Password is required."}
+        if not os.path.isfile(self.db_path):
+            # No DB yet — just set the password; _init_database will create
+            # an encrypted DB on the next RepositoryDB() call.
+            self._password = password
+            self._init_database()
+            return {"ok": True, "message": "New encrypted database created."}
+        if not is_plaintext_db(self.db_path):
+            return {"ok": True, "message": "Database is already encrypted."}
+
+        # Back up plaintext, then encrypt in-place.
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup = "{}.plaintext_backup_{}".format(self.db_path, timestamp)
+        shutil.copy2(self.db_path, backup)
+
+        self._password = password
+        self._encrypt_in_place(password)
+        try:
+            self._init_database()
+        except _DatabaseError as exc:
+            # Restore plaintext backup on failure.
+            shutil.copy2(backup, self.db_path)
+            return {
+                "ok": False,
+                "message": "Encryption failed: {}. Plaintext DB restored.".format(
+                    exc
+                ),
+            }
+        logger.info("Database migrated to encrypted (backup: %s)", backup)
+        return {
+            "ok": True,
+            "message": "Database encrypted successfully. Plaintext backup: {}".format(
+                os.path.basename(backup)
+            ),
+        }

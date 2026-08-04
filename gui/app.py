@@ -21,15 +21,20 @@ import calendar
 import requests as http_requests
 from dateutil.relativedelta import relativedelta
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash
+# Use pbkdf2 explicitly — scrypt is unavailable on macOS LibreSSL Python builds.
+_PWD_HASH_METHOD = "pbkdf2:sha256:1000000"
+
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, flash, session
 
 # Ensure project root is in path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.core.config import app_config
-from src.core.repository_db import RepositoryDB
+from src.core.repository_db import RepositoryDB, is_plaintext_db, _HAS_SQLCIPHER
+from src.core import db_security
 from src.core.github_client import GitHubClient
 from src.core.csv_reporter import CSVReporter
 from src.core.ai.csv_summarizer import AICsvSummarizer
@@ -39,7 +44,22 @@ from src.core.amc_ai_generator import AmcAiGenerator, PROMPT_VERSION, validate_a
 from src.core.amc_document_generator import AmcDocumentGenerator
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.secret_key = os.urandom(24)
+
+# Stable secret key so sessions survive restarts.  Stored in a file under data/.
+_SECRET_KEY_FILE = os.path.join(PROJECT_ROOT, "data", ".flask_secret_key")
+if os.path.isfile(_SECRET_KEY_FILE):
+    with open(_SECRET_KEY_FILE, "rb") as fh:
+        app.secret_key = fh.read()
+else:
+    app.secret_key = os.urandom(32)
+    os.makedirs(os.path.dirname(_SECRET_KEY_FILE), exist_ok=True)
+    with open(_SECRET_KEY_FILE, "wb") as fh:
+        fh.write(app.secret_key)
+    os.chmod(_SECRET_KEY_FILE, 0o600)
+
+# Session defaults: expire when browser closes unless "remember me" is checked.
+from datetime import timedelta
+app.permanent_session_lifetime = timedelta(days=30)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +69,72 @@ jobs = {}
 
 def get_db():
     return RepositoryDB()
+
+
+def get_db_path():
+    return os.path.join(PROJECT_ROOT, "data", "repositories.db")
+
+
+def encryption_state():
+    """Return the current encryption state as a dict.
+
+    Keys:
+        sqlcipher_available: bool
+        has_password: bool
+        db_exists: bool
+        db_encrypted: bool
+        needs_setup: bool      — first run, no password yet
+        needs_password: bool   — encrypted DB but no password in keyring
+    """
+    db_path = get_db_path()
+    db_exists = os.path.isfile(db_path)
+    db_encrypted = db_exists and not is_plaintext_db(db_path)
+    has_pwd = db_security.has_password()
+    return {
+        "sqlcipher_available": _HAS_SQLCIPHER,
+        "has_password": has_pwd,
+        "db_exists": db_exists,
+        "db_encrypted": db_encrypted,
+        "needs_setup": _HAS_SQLCIPHER and not has_pwd and not db_encrypted,
+        "needs_password": _HAS_SQLCIPHER and not has_pwd and db_encrypted,
+    }
+
+
+@app.before_request
+def check_encryption_setup():
+    """Redirect to the encryption setup or login page when action is required.
+
+    Order of checks:
+      1. Encryption setup (DB must be accessible first)
+      2. Login password setup (first run after encryption is configured)
+      3. Login (user must be authenticated)
+    """
+    # Pages that bypass all checks
+    if request.endpoint in ("static", "encryption_setup", "enter_password",
+                            "setup_login_password", "login", "logout"):
+        return
+
+    # 1. Encryption check
+    if _HAS_SQLCIPHER:
+        state = encryption_state()
+        if state["needs_password"]:
+            return redirect(url_for("enter_password"))
+        if state["needs_setup"]:
+            return redirect(url_for("encryption_setup"))
+
+    # 2. Login password setup check (first run)
+    try:
+        db = get_db()
+        if not db.has_login_password():
+            return redirect(url_for("setup_login_password"))
+    except Exception:
+        # If DB can't be opened, the encryption check above should have
+        # caught it.  If we get here, skip login check to avoid crash loop.
+        pass
+
+    # 3. Login check
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
 
 
 def get_reports_dir():
@@ -99,8 +185,19 @@ def _apply_runtime_settings(settings):
 
 
 def _load_saved_runtime_settings():
-    stored = get_db().get_runtime_settings(_runtime_setting_defaults())
-    _apply_runtime_settings(stored)
+    # Skip if encryption setup is needed (DB can't be opened yet).
+    state = encryption_state()
+    if state["needs_setup"] or state["needs_password"]:
+        return
+    try:
+        db = get_db()
+        # Skip if login password isn't set up yet (first run).
+        if not db.has_login_password():
+            return
+        stored = db.get_runtime_settings(_runtime_setting_defaults())
+        _apply_runtime_settings(stored)
+    except Exception as exc:
+        logger.warning("Could not load saved runtime settings: %s", exc)
 
 
 def _masked_secret(value):
@@ -1687,6 +1784,277 @@ def settings_page():
         "MONTHLY_AI_USAGE": usage,
     }
     return render_template("settings.html", settings=settings)
+
+
+# ---------------------------------------------------------------------------
+# Encryption Setup
+# ---------------------------------------------------------------------------
+@app.route("/settings/encryption", methods=["GET", "POST"])
+def encryption_setup():
+    state = encryption_state()
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        if not password:
+            flash("Password must not be empty.", "error")
+        elif len(password) < 6:
+            flash("Password must be at least 6 characters.", "error")
+        elif password != confirm:
+            flash("Passwords do not match.", "error")
+        else:
+            db_security.set_password(password)
+            # If a plaintext DB exists, migrate it now.
+            db_path = get_db_path()
+            if os.path.isfile(db_path) and is_plaintext_db(db_path):
+                db = RepositoryDB()
+                result = db.migrate_to_encrypted(password)
+                flash(result["message"], "success" if result["ok"] else "error")
+            else:
+                flash("Encryption password set. Database will be encrypted.", "success")
+            return redirect(url_for("dashboard"))
+        return render_template("setup_password.html", state=state, mode="setup")
+    return render_template("setup_password.html", state=state, mode="setup")
+
+
+@app.route("/settings/encryption/enter", methods=["GET", "POST"])
+def enter_password():
+    state = encryption_state()
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if not password:
+            flash("Password must not be empty.", "error")
+            return render_template("setup_password.html", state=state, mode="enter")
+        # Verify the password against the encrypted DB.
+        db_path = get_db_path()
+        ok, message = RepositoryDB.validate_db_file(db_path, password)
+        if ok:
+            db_security.set_password(password)
+            flash("Database unlocked successfully.", "success")
+            return redirect(url_for("dashboard"))
+        flash(message, "error")
+    return render_template("setup_password.html", state=state, mode="enter")
+
+
+@app.route("/settings/encryption/change", methods=["POST"])
+def change_encryption_password():
+    if not _HAS_SQLCIPHER:
+        flash("sqlcipher3 is not installed; encryption is unavailable.", "error")
+        return redirect(url_for("backup_page"))
+
+    current_pwd = request.form.get("current_password", "")
+    new_pwd = request.form.get("new_password", "")
+    confirm_pwd = request.form.get("confirm_password", "")
+
+    if not current_pwd or not new_pwd:
+        flash("All fields are required.", "error")
+        return redirect(url_for("backup_page"))
+    if len(new_pwd) < 6:
+        flash("New password must be at least 6 characters.", "error")
+        return redirect(url_for("backup_page"))
+    if new_pwd != confirm_pwd:
+        flash("New passwords do not match.", "error")
+        return redirect(url_for("backup_page"))
+
+    # Verify current password.
+    db_path = get_db_path()
+    ok, msg = RepositoryDB.validate_db_file(db_path, current_pwd)
+    if not ok:
+        flash("Current password is incorrect.", "error")
+        return redirect(url_for("backup_page"))
+
+    # Re-encrypt with new password: export data, re-encrypt with new key.
+    db = RepositoryDB(password=current_pwd)
+    # Use SQLCipher's rekey to change the password in-place.
+    try:
+        conn = db._connect()
+        hex_new = __import__("binascii").hexlify(new_pwd.encode()).decode()
+        conn.execute("PRAGMA rekey = \"x'{}'\"".format(hex_new))
+        conn.close()
+        db_security.set_password(new_pwd)
+        flash("Encryption password changed successfully.", "success")
+    except Exception as exc:
+        flash("Failed to change password: {}".format(exc), "error")
+    return redirect(url_for("backup_page"))
+
+
+# ---------------------------------------------------------------------------
+# Authentication (login / logout / password setup)
+# ---------------------------------------------------------------------------
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    # If no login password is set yet, redirect to setup.
+    try:
+        db = get_db()
+        if not db.has_login_password():
+            return redirect(url_for("setup_login_password"))
+    except Exception:
+        pass
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        remember = request.form.get("remember") == "on"
+        try:
+            db = get_db()
+            stored_hash = db.get_login_password_hash()
+        except Exception as exc:
+            flash("Could not access database: {}".format(exc), "error")
+            return render_template("login.html")
+
+        if stored_hash and check_password_hash(stored_hash, password):
+            session.permanent = remember
+            session["logged_in"] = True
+            next_url = request.args.get("next") or url_for("dashboard")
+            # Prevent open redirect — only allow relative URLs.
+            if not next_url.startswith("/"):
+                next_url = url_for("dashboard")
+            flash("Logged in successfully.", "success")
+            return redirect(next_url)
+        flash("Incorrect password.", "error")
+    return render_template("login.html")
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    flash("You have been logged out.", "success")
+    return redirect(url_for("login"))
+
+
+@app.route("/settings/login-password", methods=["GET", "POST"])
+def setup_login_password():
+    """First-run login password setup, and password change."""
+    try:
+        db = get_db()
+        has_pwd = db.has_login_password()
+    except Exception:
+        has_pwd = False
+
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm_password", "")
+        current = request.form.get("current_password", "")
+
+        # If changing, verify current password.
+        if has_pwd:
+            stored_hash = db.get_login_password_hash()
+            if not stored_hash or not check_password_hash(stored_hash, current):
+                flash("Current password is incorrect.", "error")
+                return render_template("setup_login.html", mode="change", has_password=True)
+
+        if not password:
+            flash("Password must not be empty.", "error")
+        elif len(password) < 6:
+            flash("Password must be at least 6 characters.", "error")
+        elif password != confirm:
+            flash("Passwords do not match.", "error")
+        else:
+            try:
+                db.set_login_password(generate_password_hash(password, method=_PWD_HASH_METHOD))
+                session["logged_in"] = True
+                flash("Login password set successfully.", "success")
+                return redirect(url_for("dashboard"))
+            except Exception as exc:
+                flash("Could not save password: {}".format(exc), "error")
+
+        return render_template("setup_login.html",
+                               mode="change" if has_pwd else "setup",
+                               has_password=has_pwd)
+
+    return render_template("setup_login.html",
+                           mode="change" if has_pwd else "setup",
+                           has_password=has_pwd)
+
+
+# ---------------------------------------------------------------------------
+# Backup & Restore
+# ---------------------------------------------------------------------------
+@app.route("/settings/backup")
+def backup_page():
+    db = get_db()
+    info = db.get_db_info()
+    enc_state = encryption_state()
+    backups = []
+    db_dir = os.path.dirname(info["path"])
+    db_name = os.path.basename(info["path"])
+    if os.path.isdir(db_dir):
+        for fn in sorted(os.listdir(db_dir), reverse=True):
+            if fn.startswith(db_name + ".backup_") or fn.startswith(db_name + ".plaintext_backup_"):
+                full = os.path.join(db_dir, fn)
+                backups.append({
+                    "name": fn,
+                    "rel": fn,
+                    "size_kb": round(os.path.getsize(full) / 1024, 1),
+                    "mtime": datetime.fromtimestamp(
+                        os.path.getmtime(full)
+                    ).strftime("%Y-%m-%d %H:%M:%S"),
+                })
+    return render_template("backup.html", info=info, backups=backups, enc_state=enc_state)
+
+
+@app.route("/settings/backup/download")
+def backup_download():
+    db = get_db()
+    info = db.get_db_info()
+    if not info["exists"]:
+        flash("Database file does not exist yet.", "error")
+        return redirect(url_for("backup_page"))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if info.get("encrypted"):
+        download_name = "repositories_encrypted_{}.db".format(timestamp)
+    else:
+        download_name = "repositories_backup_{}.db".format(timestamp)
+    return send_file(
+        info["path"],
+        as_attachment=True,
+        download_name=download_name,
+    )
+
+
+@app.route("/settings/backup/restore", methods=["POST"])
+def backup_restore():
+    uploaded = request.files.get("db_file")
+    if not uploaded or not uploaded.filename:
+        flash("Please choose a .db file to import.", "error")
+        return redirect(url_for("backup_page"))
+
+    filename = secure_filename(uploaded.filename)
+    if not filename.lower().endswith(".db"):
+        flash("Only .db files are accepted.", "error")
+        return redirect(url_for("backup_page"))
+
+    password = request.form.get("import_password", "").strip()
+
+    tmp_dir = os.path.join(PROJECT_ROOT, "data", "tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    tmp_path = os.path.join(tmp_dir, "import_{}.db".format(
+        datetime.now().strftime("%Y%m%d_%H%M%S")
+    ))
+    uploaded.save(tmp_path)
+    try:
+        # Detect if the uploaded file is encrypted.
+        from src.core.repository_db import is_plaintext_db
+        file_is_encrypted = not is_plaintext_db(tmp_path)
+        if file_is_encrypted and not password:
+            flash("This database is encrypted. Please enter the password used to encrypt it.", "error")
+            return redirect(url_for("backup_page"))
+
+        db = get_db()
+        result = db.import_db(tmp_path, password=password if file_is_encrypted else None)
+        if result["ok"]:
+            msg = result["message"]
+            if result["backup_path"]:
+                msg += " Previous DB backed up to {}.".format(
+                    os.path.basename(result["backup_path"])
+                )
+            flash(msg, "success")
+        else:
+            flash(result["message"], "error")
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+    return redirect(url_for("backup_page"))
 
 
 # ---------------------------------------------------------------------------
