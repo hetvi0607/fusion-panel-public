@@ -203,6 +203,11 @@
                 {% endif %}
                 {% if contract.output_filename %}
                 <a href="/amc/download/{{ contract.output_filename }}" class="rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-500">Download</a>
+                <form method="POST" action="/amc/finalize/{{ contract.output_filename }}">
+                    <button class="rounded-md border border-teal-200 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50">
+                        <i class="fa-solid fa-stamp mr-1"></i>Finalize &amp; Stamp
+                    </button>
+                </form>
                 {% endif %}
                 <form method="POST" action="/amc/{{ contract.id }}/renew">
                     <button class="rounded-md border border-teal-200 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50">Renew</button>

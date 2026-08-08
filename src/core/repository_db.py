@@ -60,6 +60,17 @@ DEFAULT_AMC_SETTINGS = {
     "bank_details": "",
 }
 
+DEFAULT_BRANDING_SETTINGS = {
+    "stamp_filename": "",
+    "signature_filename": "",
+    "stamp_width_in": 1.3,
+    "signature_width_in": 1.6,
+    "margin_right_in": 0.6,
+    "margin_bottom_in": 0.6,
+    "gap_in": 0.1,
+    "target_page": "last",
+}
+
 
 class RepositoryDB:
     """Manages repository configurations in SQLite database."""
@@ -829,6 +840,40 @@ class RepositoryDB:
         cursor.execute("""
             INSERT INTO app_settings (key, value_json, updated_at)
             VALUES ('amc_defaults', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value_json=excluded.value_json,
+                updated_at=CURRENT_TIMESTAMP
+        """, (json.dumps(merged, ensure_ascii=False),))
+        conn.commit()
+        conn.close()
+        return merged
+
+    def get_branding_settings(self):
+        """Return stamp/signature branding settings for PDF finalization."""
+        settings = dict(DEFAULT_BRANDING_SETTINGS)
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute("SELECT value_json FROM app_settings WHERE key='branding_settings'")
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            try:
+                stored = json.loads(row[0])
+                if isinstance(stored, dict):
+                    settings.update(stored)
+            except (TypeError, json.JSONDecodeError):
+                logger.warning("Ignoring invalid stored branding settings")
+        return settings
+
+    def save_branding_settings(self, settings):
+        """Persist stamp/signature branding settings, merging with existing values."""
+        merged = self.get_branding_settings()
+        merged.update(settings)
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO app_settings (key, value_json, updated_at)
+            VALUES ('branding_settings', ?, CURRENT_TIMESTAMP)
             ON CONFLICT(key) DO UPDATE SET
                 value_json=excluded.value_json,
                 updated_at=CURRENT_TIMESTAMP

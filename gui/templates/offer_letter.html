@@ -7,6 +7,26 @@
     <p class="mt-1 text-sm text-gray-500">Generate a professional DOCX internship offer letter with Example Company branding</p>
 </div>
 
+{% if generated %}
+<div class="mb-6 rounded-xl border border-purple-200 bg-purple-50 p-5">
+    <h2 class="text-sm font-semibold text-purple-900 mb-3">
+        <i class="fa-solid fa-circle-check mr-1.5"></i>Offer letter generated
+    </h2>
+    <div class="flex flex-col sm:flex-row gap-2">
+        <a href="/offer-letter/download/{{ generated.filename }}"
+           class="flex-1 text-center rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-purple-500 transition-colors">
+            <i class="fa-solid fa-download mr-1.5"></i> Download (.docx)
+        </a>
+        <form method="POST" action="/offer-letter/finalize/{{ generated.filename }}" class="flex-1">
+            <button type="submit"
+                    class="block w-full text-center rounded-lg border border-purple-300 bg-white px-4 py-2.5 text-sm font-semibold text-purple-700 hover:bg-purple-100 transition-colors">
+                <i class="fa-solid fa-stamp mr-1.5"></i> Finalize &amp; Stamp (PDF)
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 <form method="POST" action="/offer-letter" class="space-y-6">
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -70,7 +90,7 @@
             <!-- Submit -->
             <button type="submit"
                     class="w-full flex items-center justify-center rounded-xl bg-purple-600 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-purple-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-600 transition-colors">
-                <i class="fa-solid fa-file-arrow-down mr-2"></i> Generate & Download (.docx)
+                <i class="fa-solid fa-file-arrow-down mr-2"></i> Generate Offer Letter
             </button>
         </div>
 
