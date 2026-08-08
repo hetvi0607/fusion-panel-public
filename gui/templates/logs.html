@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Logs - Example Company{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">Application Logs</h1>
+        <p class="mt-1 text-sm text-gray-500">
+            Live view of <span class="font-mono">{{ log_path }}</span>
+            {% if log_exists %}&middot; {{ size_kb }} KB{% endif %}
+        </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+        <label class="flex items-center gap-2 text-sm text-gray-600">
+            <input type="checkbox" id="auto-refresh" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
+            Auto-refresh
+        </label>
+        <select id="lines-select"
+                class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+            {% for n in [100, 300, 500, 1000, 2000] %}
+            <option value="{{ n }}" {% if n == lines_param %}selected{% endif %}>Last {{ n }} lines</option>
+            {% endfor %}
+        </select>
+        <button type="button" id="refresh-btn"
+                class="inline-flex items-center rounded-lg bg-gray-100 px-3 py-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-200">
+            <i class="fa-solid fa-rotate mr-1.5"></i>Refresh
+        </button>
+        <a href="{{ url_for('logs_download') }}"
+           class="inline-flex items-center rounded-lg bg-gray-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-gray-800">
+            <i class="fa-solid fa-download mr-1.5"></i>Download
+        </a>
+        <form method="POST" action="{{ url_for('logs_clear') }}"
+              onsubmit="return confirm('This will permanently erase the current log file. Continue?');">
+            <button type="submit"
+                    class="inline-flex items-center rounded-lg bg-red-50 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-100">
+                <i class="fa-solid fa-trash mr-1.5"></i>Clear
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="mb-3 flex flex-wrap items-center gap-2">
+    <span class="text-xs font-semibold uppercase tracking-wider text-gray-500">Filter:</span>
+    {% for level in ["ALL", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}
+    <button type="button" data-level="{{ level }}"
+            class="level-filter-btn rounded-full border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100 {% if level == 'ALL' %}bg-gray-900 text-white border-gray-900{% endif %}">
+        {{ level }}
+    </button>
+    {% endfor %}
+</div>
+
+<section class="bg-gray-900 rounded-xl shadow-sm overflow-hidden">
+    <pre id="log-output" class="max-h-[70vh] overflow-y-auto p-4 text-xs leading-relaxed text-gray-200 font-mono whitespace-pre-wrap break-all">{% if lines %}{% for line in lines %}{{ line }}
+{% endfor %}{% else %}(log file is empty){% endif %}</pre>
+</section>
+
+<script>
+(function () {
+    const logOutput = document.getElementById('log-output');
+    const autoRefreshCheckbox = document.getElementById('auto-refresh');
+    const linesSelect = document.getElementById('lines-select');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const levelButtons = document.querySelectorAll('.level-filter-btn');
+
+    let allLines = Array.from(logOutput.textContent.split('\n'));
+    if (allLines.length && allLines[allLines.length - 1] === '') allLines.pop();
+    let currentLevel = 'ALL';
+    let timer = null;
+
+    function render() {
+        const filtered = currentLevel === 'ALL'
+            ? allLines
+            : allLines.filter(line => line.includes('- ' + currentLevel + ' -') || line.includes(' ' + currentLevel + ' '));
+        logOutput.textContent = filtered.length ? filtered.join('\n') : '(no matching log lines)';
+        logOutput.scrollTop = logOutput.scrollHeight;
+    }
+
+    function refresh() {
+        const lines = linesSelect.value;
+        fetch('/api/logs/tail?lines=' + encodeURIComponent(lines))
+            .then(r => r.json())
+            .then(data => {
+                allLines = data.lines || [];
+                render();
+            })
+            .catch(() => {});
+    }
+
+    function scheduleAutoRefresh() {
+        if (timer) clearInterval(timer);
+        if (autoRefreshCheckbox.checked) {
+            timer = setInterval(refresh, 5000);
+        }
+    }
+
+    levelButtons.forEach(btn => {
+        btn.addEventListener('click', function () {
+            currentLevel = btn.dataset.level;
+            levelButtons.forEach(b => b.classList.remove('bg-gray-900', 'text-white', 'border-gray-900'));
+            btn.classList.add('bg-gray-900', 'text-white', 'border-gray-900');
+            render();
+        });
+    });
+
+    refreshBtn.addEventListener('click', refresh);
+    linesSelect.addEventListener('change', refresh);
+    autoRefreshCheckbox.addEventListener('change', scheduleAutoRefresh);
+
+    scheduleAutoRefresh();
+})();
+</script>
+{% endblock %}

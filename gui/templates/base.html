@@ -14,63 +14,183 @@
 <body class="h-full">
     <div class="min-h-full">
         <!-- Navigation -->
-        <nav class="bg-gray-900 shadow-lg">
+        {% set is_tools_active = '/generate' in request.path or '/invoice' in request.path or '/offer-letter' in request.path or '/amc' in request.path or ('/job' in request.path and ('inv_' in request.path or 'amc_' in request.path)) %}
+        <nav class="sticky top-0 z-50 bg-gray-900 shadow-lg">
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div class="flex min-h-16 items-center py-2">
-                    <div class="flex w-full flex-col gap-2 2xl:flex-row 2xl:items-center">
-                        <a href="/" class="flex shrink-0 items-center">
-                            <span class="text-white font-bold text-lg">Example Company</span>
+                <div class="flex h-16 items-center justify-between">
+                    <!-- Logo -->
+                    <div class="flex items-center">
+                        <a href="/" class="flex shrink-0 items-center gap-2 text-white hover:opacity-90 transition-opacity">
+                            <i class="fa-solid fa-bolt text-yellow-400 text-xl"></i>
+                            <span class="font-bold text-xl tracking-tight">Example Company</span>
                         </a>
-                        <div class="flex min-w-0 w-full flex-wrap items-baseline gap-1 2xl:ml-4 2xl:flex-1">
+                    </div>
+
+                    <!-- Desktop menu -->
+                    <div class="hidden md:flex md:flex-1 md:items-center md:justify-between md:ml-8">
+                        <div class="flex items-baseline gap-1">
                             <a href="/"
-                               class="nav-link rounded-md px-3 py-2 text-sm font-medium
+                               class="rounded-md px-3 py-2 text-sm font-medium transition-colors
                                {% if request.path == '/' %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
                                 <i class="fa-solid fa-gauge-high mr-1"></i> Dashboard
                             </a>
-                            <a href="/generate"
-                               class="nav-link rounded-md px-3 py-2 text-sm font-medium
-                               {% if '/generate' in request.path or ('/job' in request.path and 'inv_' not in request.path) %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
-                                <i class="fa-solid fa-play mr-1"></i> Generate Report
-                            </a>
-                            <a href="/invoice"
-                               class="nav-link rounded-md px-3 py-2 text-sm font-medium
-                               {% if '/invoice' in request.path or ('inv_' in request.path) %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
-                                <i class="fa-solid fa-file-invoice mr-1"></i> Generate Invoice
-                            </a>
-                            <a href="/offer-letter"
-                               class="nav-link rounded-md px-3 py-2 text-sm font-medium
-                               {% if '/offer-letter' in request.path %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
-                                <i class="fa-solid fa-file-signature mr-1"></i> Offer Letter
-                            </a>
-                            <a href="/amc"
-                               class="nav-link rounded-md px-3 py-2 text-sm font-medium
-                               {% if '/amc' in request.path or ('/job' in request.path and 'amc_' in request.path) %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
-                                <i class="fa-solid fa-file-contract mr-1"></i> AMC
-                            </a>
+
+                            <!-- Tools dropdown -->
+                            <div class="relative group">
+                                <button type="button"
+                                        class="inline-flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors
+                                        {% if is_tools_active %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                    <i class="fa-solid fa-toolbox mr-1.5"></i> Tools
+                                    <i class="fa-solid fa-chevron-down ml-1.5 text-xs opacity-70"></i>
+                                </button>
+                                <div class="absolute left-0 top-full hidden pt-2 group-hover:block w-56">
+                                    <div class="rounded-lg bg-gray-800 shadow-xl ring-1 ring-white/10 overflow-hidden">
+                                        <a href="/generate"
+                                           class="block px-4 py-2.5 text-sm transition-colors
+                                           {% if '/generate' in request.path or ('/job' in request.path and 'inv_' not in request.path and 'amc_' not in request.path) %}bg-gray-700 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                            <i class="fa-solid fa-play w-5 mr-1 text-center"></i> Generate Report
+                                        </a>
+                                        <a href="/invoice"
+                                           class="block px-4 py-2.5 text-sm transition-colors
+                                           {% if '/invoice' in request.path or ('inv_' in request.path) %}bg-gray-700 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                            <i class="fa-solid fa-file-invoice w-5 mr-1 text-center"></i> Generate Invoice
+                                        </a>
+                                        <a href="/offer-letter"
+                                           class="block px-4 py-2.5 text-sm transition-colors
+                                           {% if '/offer-letter' in request.path %}bg-gray-700 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                            <i class="fa-solid fa-file-signature w-5 mr-1 text-center"></i> Offer Letter
+                                        </a>
+                                        <a href="/amc"
+                                           class="block px-4 py-2.5 text-sm transition-colors
+                                           {% if '/amc' in request.path or ('/job' in request.path and 'amc_' in request.path) %}bg-gray-700 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                            <i class="fa-solid fa-file-contract w-5 mr-1 text-center"></i> AMC
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+
                             <a href="/reports"
-                               class="nav-link rounded-md px-3 py-2 text-sm font-medium
+                               class="rounded-md px-3 py-2 text-sm font-medium transition-colors
                                {% if '/reports' in request.path %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
                                 <i class="fa-solid fa-file-csv mr-1"></i> Reports
                             </a>
                             <a href="/settings"
-                               class="nav-link rounded-md px-3 py-2 text-sm font-medium
+                               class="rounded-md px-3 py-2 text-sm font-medium transition-colors
                                {% if request.path.startswith('/settings') %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
                                 <i class="fa-solid fa-gear mr-1"></i> Settings
                             </a>
                         </div>
-                        <div class="flex shrink-0 items-center 2xl:ml-4">
-                            <form method="POST" action="{{ url_for('logout') }}" class="inline">
-                                <button type="submit"
-                                        class="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white"
-                                        title="Log out">
-                                    <i class="fa-solid fa-arrow-right-from-bracket mr-1"></i> Logout
-                                </button>
-                            </form>
-                        </div>
+
+                        <form method="POST" action="{{ url_for('logout') }}" class="ml-4">
+                            <button type="submit"
+                                    class="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-red-600/80 hover:text-white transition-colors"
+                                    title="Log out">
+                                <i class="fa-solid fa-arrow-right-from-bracket mr-1"></i> Logout
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Mobile menu button -->
+                    <div class="flex md:hidden">
+                        <button type="button" id="mobile-menu-button"
+                                class="inline-flex items-center justify-center rounded-md p-2 text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
+                                aria-controls="mobile-menu" aria-expanded="false">
+                            <span class="sr-only">Open main menu</span>
+                            <i class="fa-solid fa-bars text-lg" id="mobile-menu-icon"></i>
+                        </button>
                     </div>
                 </div>
             </div>
+
+            <!-- Mobile menu -->
+            <div class="hidden md:hidden border-t border-gray-800" id="mobile-menu">
+                <div class="px-2 pb-3 pt-2 space-y-1">
+                    <a href="/"
+                       class="block rounded-md px-3 py-2 text-base font-medium transition-colors
+                       {% if request.path == '/' %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                        <i class="fa-solid fa-gauge-high mr-2 w-5 text-center"></i> Dashboard
+                    </a>
+
+                    <div>
+                        <button type="button" id="mobile-tools-button"
+                                class="flex w-full items-center justify-between rounded-md px-3 py-2 text-base font-medium transition-colors
+                                {% if is_tools_active %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                            <span><i class="fa-solid fa-toolbox mr-2 w-5 text-center"></i> Tools</span>
+                            <i class="fa-solid fa-chevron-down text-xs transition-transform" id="mobile-tools-chevron"></i>
+                        </button>
+                        <div class="hidden mt-1 space-y-1 rounded-md bg-gray-800/50 p-1" id="mobile-tools-submenu">
+                            <a href="/generate"
+                               class="block rounded-md px-3 py-2 text-sm font-medium transition-colors
+                               {% if '/generate' in request.path or ('/job' in request.path and 'inv_' not in request.path and 'amc_' not in request.path) %}bg-gray-700 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                <i class="fa-solid fa-play mr-2 w-5 text-center"></i> Generate Report
+                            </a>
+                            <a href="/invoice"
+                               class="block rounded-md px-3 py-2 text-sm font-medium transition-colors
+                               {% if '/invoice' in request.path or ('inv_' in request.path) %}bg-gray-700 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                <i class="fa-solid fa-file-invoice mr-2 w-5 text-center"></i> Generate Invoice
+                            </a>
+                            <a href="/offer-letter"
+                               class="block rounded-md px-3 py-2 text-sm font-medium transition-colors
+                               {% if '/offer-letter' in request.path %}bg-gray-700 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                <i class="fa-solid fa-file-signature mr-2 w-5 text-center"></i> Offer Letter
+                            </a>
+                            <a href="/amc"
+                               class="block rounded-md px-3 py-2 text-sm font-medium transition-colors
+                               {% if '/amc' in request.path or ('/job' in request.path and 'amc_' in request.path) %}bg-gray-700 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                                <i class="fa-solid fa-file-contract mr-2 w-5 text-center"></i> AMC
+                            </a>
+                        </div>
+                    </div>
+
+                    <a href="/reports"
+                       class="block rounded-md px-3 py-2 text-base font-medium transition-colors
+                       {% if '/reports' in request.path %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                        <i class="fa-solid fa-file-csv mr-2 w-5 text-center"></i> Reports
+                    </a>
+                    <a href="/settings"
+                       class="block rounded-md px-3 py-2 text-base font-medium transition-colors
+                       {% if request.path.startswith('/settings') %}bg-gray-800 text-white{% else %}text-gray-300 hover:bg-gray-700 hover:text-white{% endif %}">
+                        <i class="fa-solid fa-gear mr-2 w-5 text-center"></i> Settings
+                    </a>
+                    <form method="POST" action="{{ url_for('logout') }}" class="pt-1">
+                        <button type="submit"
+                                class="w-full text-left rounded-md px-3 py-2 text-base font-medium text-gray-300 hover:bg-red-600/80 hover:text-white transition-colors">
+                            <i class="fa-solid fa-arrow-right-from-bracket mr-2 w-5 text-center"></i> Logout
+                        </button>
+                    </form>
+                </div>
+            </div>
         </nav>
+
+        <script>
+            (function () {
+                const mobileMenuButton = document.getElementById('mobile-menu-button');
+                const mobileMenu = document.getElementById('mobile-menu');
+                const mobileMenuIcon = document.getElementById('mobile-menu-icon');
+
+                mobileMenuButton.addEventListener('click', function () {
+                    const expanded = mobileMenuButton.getAttribute('aria-expanded') === 'true';
+                    mobileMenuButton.setAttribute('aria-expanded', String(!expanded));
+                    mobileMenu.classList.toggle('hidden');
+                    if (mobileMenu.classList.contains('hidden')) {
+                        mobileMenuIcon.classList.remove('fa-xmark');
+                        mobileMenuIcon.classList.add('fa-bars');
+                    } else {
+                        mobileMenuIcon.classList.remove('fa-bars');
+                        mobileMenuIcon.classList.add('fa-xmark');
+                    }
+                });
+
+                const mobileToolsButton = document.getElementById('mobile-tools-button');
+                const mobileToolsSubmenu = document.getElementById('mobile-tools-submenu');
+                const mobileToolsChevron = document.getElementById('mobile-tools-chevron');
+
+                mobileToolsButton.addEventListener('click', function () {
+                    mobileToolsSubmenu.classList.toggle('hidden');
+                    mobileToolsChevron.classList.toggle('rotate-180');
+                });
+            })();
+        </script>
 
         <!-- Flash Messages -->
         {% with messages = get_flashed_messages(with_categories=true) %}

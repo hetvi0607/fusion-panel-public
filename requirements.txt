@@ -14,6 +14,9 @@ flask>=3.0.0
 python-docx>=1.0.0
 sqlcipher3>=0.5.0
 keyring>=25.0.0
+pymupdf==1.26.7
+# LibreOffice ('soffice') must be installed separately (e.g. `brew install --cask libreoffice`)
+# for DOCX -> PDF finalization (stamp/signature). Not a pip package.
 # WhatsApp Business API - uses requests library already included above
 # Note: SQLite is built into Python, no additional package needed
 # Note: sqlcipher3 provides AES-256 encryption for the database at rest

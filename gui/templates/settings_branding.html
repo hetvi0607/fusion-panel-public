@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}Stamp & Signature - Example Company{% endblock %}
+
+{% block content %}
+{% include "_settings_nav.html" %}
+
+<div class="mb-6">
+    <h1 class="text-3xl font-bold text-gray-900">Stamp &amp; Signature</h1>
+    <p class="mt-1 text-sm text-gray-500">
+        Upload your company stamp and signature once. Use the "Finalize &amp; Stamp"
+        button on any generated invoice, AMC, or offer letter to produce a
+        client-ready PDF with both overlaid near the bottom-right corner —
+        no more Google Drive / Preview round-trip.
+    </p>
+</div>
+
+<form method="POST" action="{{ url_for('branding_settings') }}" enctype="multipart/form-data" class="space-y-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Stamp -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">
+                <i class="fa-solid fa-stamp text-gray-500 mr-2"></i>Company Stamp
+            </h2>
+            {% if branding.stamp_filename %}
+            <div class="mb-4 flex items-center gap-4">
+                <img src="{{ url_for('branding_preview', kind='stamp') }}" alt="Stamp preview"
+                     class="h-24 w-24 object-contain border border-gray-200 rounded-lg bg-gray-50 p-2">
+                <button type="submit" name="action" value="remove_stamp" formnovalidate
+                        class="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">
+                    <i class="fa-solid fa-trash mr-1"></i>Remove
+                </button>
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-400 mb-4">No stamp uploaded yet.</p>
+            {% endif %}
+            <div class="space-y-2">
+                <input type="file" id="stamp_image" name="stamp_image" accept=".png,.jpg,.jpeg" class="block w-full text-sm text-gray-600
+                       file:mr-3 file:rounded-lg file:border-0 file:bg-gray-900 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-gray-800">
+                <p class="text-xs text-gray-400">PNG with a transparent background works best.</p>
+            </div>
+        </div>
+
+        <!-- Signature -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-base font-semibold text-gray-900 mb-4">
+                <i class="fa-solid fa-signature text-gray-500 mr-2"></i>Signature
+            </h2>
+            {% if branding.signature_filename %}
+            <div class="mb-4 flex items-center gap-4">
+                <img src="{{ url_for('branding_preview', kind='signature') }}" alt="Signature preview"
+                     class="h-24 w-24 object-contain border border-gray-200 rounded-lg bg-gray-50 p-2">
+                <button type="submit" name="action" value="remove_signature" formnovalidate
+                        class="rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50">
+                    <i class="fa-solid fa-trash mr-1"></i>Remove
+                </button>
+            </div>
+            {% else %}
+            <p class="text-sm text-gray-400 mb-4">No signature uploaded yet.</p>
+            {% endif %}
+            <div class="space-y-2">
+                <input type="file" id="signature_image" name="signature_image" accept=".png,.jpg,.jpeg" class="block w-full text-sm text-gray-600
+                       file:mr-3 file:rounded-lg file:border-0 file:bg-gray-900 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:bg-gray-800">
+                <p class="text-xs text-gray-400">PNG with a transparent background works best.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-base font-semibold text-gray-900 mb-1">
+                <i class="fa-solid fa-ruler-combined text-gray-500 mr-2"></i>Placement &amp; Size
+            </h2>
+            <p class="text-xs text-gray-500 mb-4">
+                Signature is placed to the left of the stamp, both bottom-aligned near
+                the corner of the page. Adjust sizes and margins to match your documents —
+                the preview on the right updates live.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Stamp Width (inches)</label>
+                    <input type="number" step="0.05" id="stamp_width_in" name="stamp_width_in" value="{{ branding.stamp_width_in }}" class="field">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Signature Width (inches)</label>
+                    <input type="number" step="0.05" id="signature_width_in" name="signature_width_in" value="{{ branding.signature_width_in }}" class="field">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Right Margin (inches)</label>
+                    <input type="number" step="0.05" id="margin_right_in" name="margin_right_in" value="{{ branding.margin_right_in }}" class="field">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Bottom Margin (inches)</label>
+                    <input type="number" step="0.05" id="margin_bottom_in" name="margin_bottom_in" value="{{ branding.margin_bottom_in }}" class="field">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Gap Between Signature &amp; Stamp (inches)</label>
+                    <input type="number" step="0.05" id="gap_in" name="gap_in" value="{{ branding.gap_in }}" class="field">
+                    <p class="text-xs text-gray-400 mt-1">Use a negative value to overlap the stamp onto the signature.</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Page to Stamp</label>
+                    <select id="target_page" name="target_page" class="field">
+                        <option value="last" {% if branding.target_page == 'last' %}selected{% endif %}>Last page</option>
+                        <option value="first" {% if branding.target_page == 'first' %}selected{% endif %}>First page</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live A4 Preview -->
+        <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-base font-semibold text-gray-900 mb-1">
+                <i class="fa-solid fa-eye text-gray-500 mr-2"></i>Preview (A4)
+            </h2>
+            <p class="text-xs text-gray-500 mb-4">
+                Approximate placement on an A4 page (8.27&Prime; &times; 11.69&Prime;).
+                Pick a file above to preview it here before saving.
+            </p>
+            <div class="flex flex-col items-center gap-2">
+                <div id="a4-preview" class="relative bg-white border border-gray-300 shadow-inner w-full max-w-[260px]" style="aspect-ratio: 210 / 297;">
+                    <span id="preview-page-label"
+                          class="absolute top-2 left-2 rounded bg-gray-900/80 px-2 py-0.5 text-[10px] font-semibold text-white">
+                        Last Page
+                    </span>
+
+                    <div id="preview-stamp-slot"
+                         class="absolute flex items-center justify-center rounded border-2 border-dashed border-red-300 bg-red-50/60 text-[9px] font-medium text-red-400">
+                        Stamp
+                    </div>
+                    <img id="preview-stamp-img" alt="Stamp preview" class="absolute hidden object-contain">
+
+                    <div id="preview-signature-slot"
+                         class="absolute flex items-center justify-center rounded border-2 border-dashed border-blue-300 bg-blue-50/60 text-[9px] font-medium text-blue-400">
+                        Signature
+                    </div>
+                    <img id="preview-signature-img" alt="Signature preview" class="absolute hidden object-contain">
+                </div>
+                <p class="text-[11px] text-gray-400">Dashed boxes show placement when no image is selected yet.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex justify-end">
+        <button type="submit" name="action" value="save"
+                class="rounded-xl bg-gray-900 px-6 py-3 text-sm font-semibold text-white hover:bg-gray-800">
+            <i class="fa-solid fa-floppy-disk mr-2"></i>Save Branding Settings
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block head %}
+<style>
+.field { display:block; width:100%; border:1px solid #d1d5db; border-radius:.5rem; padding:.5rem .75rem; font-size:.875rem; }
+.field:focus { outline:none; border-color:#111827; box-shadow:0 0 0 1px #111827; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    // A4 dimensions in inches, matching the PDF page size documents are
+    // generated at (Letter/A4 are close enough here for a rough preview).
+    var A4_WIDTH_IN = 8.27;
+
+    var savedStampUrl = {{ (url_for('branding_preview', kind='stamp') if branding.stamp_filename else '') | tojson }};
+    var savedSignatureUrl = {{ (url_for('branding_preview', kind='signature') if branding.signature_filename else '') | tojson }};
+
+    var state = {
+        hasStamp: !!savedStampUrl,
+        hasSignature: !!savedSignatureUrl,
+    };
+
+    var container = document.getElementById('a4-preview');
+    var stampImg = document.getElementById('preview-stamp-img');
+    var stampSlot = document.getElementById('preview-stamp-slot');
+    var signatureImg = document.getElementById('preview-signature-img');
+    var signatureSlot = document.getElementById('preview-signature-slot');
+    var pageLabel = document.getElementById('preview-page-label');
+
+    function num(id, fallback) {
+        var el = document.getElementById(id);
+        var value = el ? parseFloat(el.value) : NaN;
+        return isNaN(value) ? fallback : value;
+    }
+
+    function updatePreview() {
+        var pxPerInch = container.getBoundingClientRect().width / A4_WIDTH_IN;
+
+        var marginRight = num('margin_right_in', 0.6) * pxPerInch;
+        var marginBottom = num('margin_bottom_in', 0.6) * pxPerInch;
+        var gap = num('gap_in', 0.1) * pxPerInch;
+        var stampWidth = Math.max(num('stamp_width_in', 1.3) * pxPerInch, 4);
+        var signatureWidth = Math.max(num('signature_width_in', 1.6) * pxPerInch, 4);
+
+        var stampHeight = stampImg.naturalWidth
+            ? stampWidth * (stampImg.naturalHeight / stampImg.naturalWidth)
+            : stampWidth * 0.7;
+        var signatureHeight = signatureImg.naturalWidth
+            ? signatureWidth * (signatureImg.naturalHeight / signatureImg.naturalWidth)
+            : signatureWidth * 0.4;
+
+        [stampImg, stampSlot].forEach(function (el) {
+            el.style.width = stampWidth + 'px';
+            el.style.height = stampHeight + 'px';
+            el.style.right = marginRight + 'px';
+            el.style.bottom = marginBottom + 'px';
+        });
+
+        // Signature sits to the left of the stamp (only reserve stamp's
+        // space when a stamp is actually configured), matching the
+        // backend placement logic in document_finalizer.py.
+        var signatureRight = marginRight + (state.hasStamp ? stampWidth + gap : 0);
+        [signatureImg, signatureSlot].forEach(function (el) {
+            el.style.width = signatureWidth + 'px';
+            el.style.height = signatureHeight + 'px';
+            el.style.right = signatureRight + 'px';
+            el.style.bottom = marginBottom + 'px';
+        });
+
+        stampImg.classList.toggle('hidden', !state.hasStamp);
+        stampSlot.classList.toggle('hidden', state.hasStamp);
+        signatureImg.classList.toggle('hidden', !state.hasSignature);
+        signatureSlot.classList.toggle('hidden', state.hasSignature);
+
+        var targetPage = document.getElementById('target_page').value;
+        pageLabel.textContent = targetPage === 'first' ? 'First Page' : 'Last Page';
+    }
+
+    function previewSelectedFile(inputId, imgEl, hasKey) {
+        var input = document.getElementById(inputId);
+        input.addEventListener('change', function () {
+            if (input.files && input.files[0]) {
+                imgEl.src = URL.createObjectURL(input.files[0]);
+                imgEl.onload = function () {
+                    state[hasKey] = true;
+                    updatePreview();
+                };
+            }
+        });
+    }
+
+    if (savedStampUrl) { stampImg.src = savedStampUrl; }
+    if (savedSignatureUrl) { signatureImg.src = savedSignatureUrl; }
+    stampImg.onload = updatePreview;
+    signatureImg.onload = updatePreview;
+
+    previewSelectedFile('stamp_image', stampImg, 'hasStamp');
+    previewSelectedFile('signature_image', signatureImg, 'hasSignature');
+
+    [
+        'stamp_width_in', 'signature_width_in', 'margin_right_in',
+        'margin_bottom_in', 'gap_in', 'target_page',
+    ].forEach(function (id) {
+        document.getElementById(id).addEventListener('input', updatePreview);
+    });
+
+    window.addEventListener('resize', updatePreview);
+    updatePreview();
+})();
+</script>
+{% endblock %}

@@ -44,6 +44,9 @@ data/repositories.db
 data/reports/*.csv
 !data/reports/.gitkeep
 data/amc_contracts/
+data/branding/
+data/invoices/*.docx
+data/invoices/*.pdf
 
 # Google credentials
 credentials.json

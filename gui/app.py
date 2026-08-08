@@ -42,6 +42,7 @@ from src.core.invoice_generator import InvoiceGenerator
 from src.core.offer_letter_generator import OfferLetterGenerator
 from src.core.amc_ai_generator import AmcAiGenerator, PROMPT_VERSION, validate_amc_draft
 from src.core.amc_document_generator import AmcDocumentGenerator
+from src.core.document_finalizer import finalize_to_pdf, FinalizeError
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -314,6 +315,40 @@ def get_offer_letters_dir():
 
 def get_amc_contracts_dir():
     return os.path.join(PROJECT_ROOT, "data", "amc_contracts")
+
+
+def get_branding_dir():
+    branding_dir = os.path.join(PROJECT_ROOT, "data", "branding")
+    os.makedirs(branding_dir, exist_ok=True)
+    return branding_dir
+
+
+def _branding_for_finalize():
+    """Load branding settings and resolve stamp/signature image paths."""
+    db = get_db()
+    branding = dict(db.get_branding_settings())
+    branding_dir = get_branding_dir()
+    if branding.get("stamp_filename"):
+        branding["stamp_path"] = os.path.join(
+            branding_dir, branding["stamp_filename"]
+        )
+    if branding.get("signature_filename"):
+        branding["signature_path"] = os.path.join(
+            branding_dir, branding["signature_filename"]
+        )
+    return branding
+
+
+def _finalize_document(directory, filename):
+    """Convert the given DOCX (in directory) to a stamped, client-ready PDF."""
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        raise ValueError("Invalid filename.")
+    docx_path = os.path.join(directory, safe_name)
+    if not os.path.isfile(docx_path):
+        raise FileNotFoundError(f"Document not found: {safe_name}")
+    branding = _branding_for_finalize()
+    return finalize_to_pdf(docx_path, branding)
 
 
 RUNTIME_SETTING_KEYS = (
@@ -1161,6 +1196,24 @@ def download_invoice(filename):
     return send_file(full_path, as_attachment=True)
 
 
+@app.route("/invoice/finalize/<path:filename>", methods=["POST"])
+def finalize_invoice(filename):
+    try:
+        pdf_path = _finalize_document(get_invoices_dir(), filename)
+        return send_file(
+            pdf_path, as_attachment=True,
+            download_name=os.path.basename(pdf_path),
+        )
+    except FileNotFoundError:
+        flash("Invoice file not found.", "error")
+    except (FinalizeError, ValueError) as exc:
+        flash(f"Could not create stamped PDF: {exc}", "error")
+    except Exception:
+        logger.exception("Failed to finalize invoice")
+        flash("Could not create stamped PDF. See logs for details.", "error")
+    return redirect(url_for("dashboard"))
+
+
 # ---------------------------------------------------------------------------
 # Offer Letter Generation
 # ---------------------------------------------------------------------------
@@ -1225,11 +1278,43 @@ def generate_offer_letter():
 
         generator.generate_offer_letter(data, output_path)
         logger.info(f"Offer letter generated: {output_path}")
-        return send_file(output_path, as_attachment=True, download_name=filename)
+        flash("Offer letter generated.", "success")
+        return render_template(
+            "offer_letter.html", form=form,
+            generated={"filename": filename},
+        )
     except Exception as e:
         logger.error(f"Error generating offer letter: {e}")
         flash(f"Error generating offer letter: {e}", "error")
         return render_template("offer_letter.html", form=form)
+
+
+@app.route("/offer-letter/download/<path:filename>")
+def download_offer_letter(filename):
+    safe_name = os.path.basename(filename)
+    full_path = os.path.join(get_offer_letters_dir(), safe_name)
+    if safe_name != filename or not os.path.isfile(full_path):
+        flash("Offer letter file not found.", "error")
+        return redirect(url_for("offer_letter_page"))
+    return send_file(full_path, as_attachment=True)
+
+
+@app.route("/offer-letter/finalize/<path:filename>", methods=["POST"])
+def finalize_offer_letter(filename):
+    try:
+        pdf_path = _finalize_document(get_offer_letters_dir(), filename)
+        return send_file(
+            pdf_path, as_attachment=True,
+            download_name=os.path.basename(pdf_path),
+        )
+    except FileNotFoundError:
+        flash("Offer letter file not found.", "error")
+    except (FinalizeError, ValueError) as exc:
+        flash(f"Could not create stamped PDF: {exc}", "error")
+    except Exception:
+        logger.exception("Failed to finalize offer letter")
+        flash("Could not create stamped PDF. See logs for details.", "error")
+    return redirect(url_for("offer_letter_page"))
 
 
 # ---------------------------------------------------------------------------
@@ -1660,6 +1745,24 @@ def download_amc(filename):
     return send_file(full_path, as_attachment=True)
 
 
+@app.route("/amc/finalize/<path:filename>", methods=["POST"])
+def finalize_amc(filename):
+    try:
+        pdf_path = _finalize_document(get_amc_contracts_dir(), filename)
+        return send_file(
+            pdf_path, as_attachment=True,
+            download_name=os.path.basename(pdf_path),
+        )
+    except FileNotFoundError:
+        flash("AMC file not found.", "error")
+    except (FinalizeError, ValueError) as exc:
+        flash(f"Could not create stamped PDF: {exc}", "error")
+    except Exception:
+        logger.exception("Failed to finalize AMC contract")
+        flash("Could not create stamped PDF. See logs for details.", "error")
+    return redirect(url_for("amc_page"))
+
+
 @app.route("/amc/settings", methods=["GET", "POST"])
 def amc_settings():
     db = get_db()
@@ -1929,6 +2032,111 @@ def company_settings():
         "company_settings.html",
         defaults=db.get_amc_settings(),
     )
+
+
+_BRANDING_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+
+
+@app.route("/settings/branding", methods=["GET", "POST"])
+def branding_settings():
+    db = get_db()
+    branding_dir = get_branding_dir()
+
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+        current = db.get_branding_settings()
+
+        if action in ("remove_stamp", "remove_signature"):
+            key = "stamp_filename" if action == "remove_stamp" else "signature_filename"
+            existing = current.get(key)
+            if existing:
+                try:
+                    os.remove(os.path.join(branding_dir, existing))
+                except OSError:
+                    pass
+            db.save_branding_settings({key: ""})
+            flash("Image removed.", "success")
+            return redirect(url_for("branding_settings"))
+
+        try:
+            stamp_width_in = float(request.form.get("stamp_width_in", current["stamp_width_in"]))
+            signature_width_in = float(
+                request.form.get("signature_width_in", current["signature_width_in"])
+            )
+            margin_right_in = float(
+                request.form.get("margin_right_in", current["margin_right_in"])
+            )
+            margin_bottom_in = float(
+                request.form.get("margin_bottom_in", current["margin_bottom_in"])
+            )
+            gap_in = float(request.form.get("gap_in", current["gap_in"]))
+            target_page = request.form.get("target_page", current["target_page"]).strip()
+            if target_page not in ("first", "last"):
+                raise ValueError("Select a valid target page.")
+            for value, label in [
+                (stamp_width_in, "Stamp width"),
+                (signature_width_in, "Signature width"),
+                (margin_right_in, "Right margin"),
+                (margin_bottom_in, "Bottom margin"),
+            ]:
+                if not 0.2 <= value <= 4:
+                    raise ValueError(f"{label} must be between 0.2 and 4 inches.")
+            if not -2 <= gap_in <= 2:
+                raise ValueError("Gap must be between -2 and 2 inches.")
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return render_template(
+                "settings_branding.html", branding=db.get_branding_settings(),
+            )
+
+        updates = {
+            "stamp_width_in": stamp_width_in,
+            "signature_width_in": signature_width_in,
+            "margin_right_in": margin_right_in,
+            "margin_bottom_in": margin_bottom_in,
+            "gap_in": gap_in,
+            "target_page": target_page,
+        }
+
+        for field_name, settings_key, stored_stem in [
+            ("stamp_image", "stamp_filename", "stamp"),
+            ("signature_image", "signature_filename", "signature"),
+        ]:
+            upload = request.files.get(field_name)
+            if upload and upload.filename:
+                ext = os.path.splitext(upload.filename)[1].lower()
+                if ext not in _BRANDING_ALLOWED_EXTENSIONS:
+                    flash(
+                        "Stamp/signature images must be PNG or JPG files.",
+                        "error",
+                    )
+                    return render_template(
+                        "settings_branding.html",
+                        branding=db.get_branding_settings(),
+                    )
+                stored_name = f"{stored_stem}{ext}"
+                upload.save(os.path.join(branding_dir, stored_name))
+                updates[settings_key] = stored_name
+
+        db.save_branding_settings(updates)
+        flash("Branding settings saved.", "success")
+        return redirect(url_for("branding_settings"))
+
+    return render_template("settings_branding.html", branding=db.get_branding_settings())
+
+
+@app.route("/settings/branding/preview/<kind>")
+def branding_preview(kind):
+    if kind not in ("stamp", "signature"):
+        return "", 404
+    db = get_db()
+    filename = db.get_branding_settings().get(f"{kind}_filename")
+    if not filename:
+        return "", 404
+    path = os.path.join(get_branding_dir(), filename)
+    if not os.path.isfile(path):
+        return "", 404
+    return send_file(path)
 
 
 @app.route("/settings", methods=["GET", "POST"])
@@ -2281,6 +2489,99 @@ def backup_restore():
         except OSError:
             pass
     return redirect(url_for("backup_page"))
+
+
+# ---------------------------------------------------------------------------
+# Log Viewer
+# ---------------------------------------------------------------------------
+LOG_LEVEL_TAGS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+
+def _tail_log_lines(path, max_lines=500, max_bytes=2 * 1024 * 1024):
+    """Return up to `max_lines` most recent lines from `path`.
+
+    Reads from the end of the file in chunks so large log files don't need
+    to be loaded into memory in full.
+    """
+    if not os.path.isfile(path):
+        return []
+
+    chunk_size = 8192
+    data = b""
+    with open(path, "rb") as fh:
+        fh.seek(0, os.SEEK_END)
+        remaining = fh.tell()
+        while remaining > 0 and len(data) < max_bytes and data.count(b"\n") <= max_lines:
+            read_size = min(chunk_size, remaining)
+            remaining -= read_size
+            fh.seek(remaining)
+            data = fh.read(read_size) + data
+    text = data.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    return lines[-max_lines:]
+
+
+@app.route("/settings/logs")
+def logs_page():
+    try:
+        lines_param = int(request.args.get("lines", 300))
+    except ValueError:
+        lines_param = 300
+    lines_param = max(50, min(lines_param, 2000))
+
+    log_path = app_config.LOG_FILE
+    lines = _tail_log_lines(log_path, max_lines=lines_param)
+    exists = os.path.isfile(log_path)
+    size_kb = round(os.path.getsize(log_path) / 1024, 1) if exists else 0
+
+    return render_template(
+        "logs.html",
+        log_path=log_path,
+        log_exists=exists,
+        size_kb=size_kb,
+        lines=lines,
+        lines_param=lines_param,
+        current_log_level=app_config.LOG_LEVEL,
+    )
+
+
+@app.route("/api/logs/tail")
+def logs_tail_api():
+    try:
+        lines_param = int(request.args.get("lines", 300))
+    except ValueError:
+        lines_param = 300
+    lines_param = max(50, min(lines_param, 2000))
+
+    log_path = app_config.LOG_FILE
+    lines = _tail_log_lines(log_path, max_lines=lines_param)
+    return jsonify({"lines": lines})
+
+
+@app.route("/settings/logs/download")
+def logs_download():
+    log_path = app_config.LOG_FILE
+    if not os.path.isfile(log_path):
+        flash("Log file does not exist yet.", "error")
+        return redirect(url_for("logs_page"))
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return send_file(
+        log_path,
+        as_attachment=True,
+        download_name="commit_tracker_{}.log".format(timestamp),
+    )
+
+
+@app.route("/settings/logs/clear", methods=["POST"])
+def logs_clear():
+    log_path = app_config.LOG_FILE
+    try:
+        if os.path.isfile(log_path):
+            open(log_path, "w").close()
+        flash("Log file cleared.", "success")
+    except OSError as exc:
+        flash("Could not clear log file: {}".format(exc), "error")
+    return redirect(url_for("logs_page"))
 
 
 # ---------------------------------------------------------------------------
