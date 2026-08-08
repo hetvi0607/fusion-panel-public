@@ -22,6 +22,7 @@
             <tr>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Repository</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Branch</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</th>
                 <th class="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Activity</th>
                 <th class="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Enabled</th>
                 <th class="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">AI</th>
@@ -46,6 +47,15 @@
                     <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
                         <i class="fa-solid fa-code-branch mr-1 text-[10px]"></i>{{ repo.branch }}
                     </span>
+                </td>
+                <td class="px-6 py-4">
+                    {% if repo.client_name %}
+                    <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">
+                        <i class="fa-solid fa-building mr-1 text-[10px]"></i>{{ repo.client_name }}
+                    </span>
+                    {% else %}
+                    <a href="/settings/clients" class="text-xs text-gray-400 hover:text-indigo-500">Unmapped</a>
+                    {% endif %}
                 </td>
                 <td class="px-6 py-4 text-center" data-repo-activity="{{ repo.repo }}">
                     {% if active_repos_status == 'ready' %}

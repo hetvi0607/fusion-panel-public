@@ -163,6 +163,23 @@ class RepositoryDB:
             "signatory_title": "TEXT DEFAULT ''",
         })
 
+        # Maps a repository to the client it belongs to. Keyed on repo_name
+        # (not repo+branch) so every tracked branch of a repo shares one
+        # client, and so a repo can only ever belong to a single client.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS client_repositories (
+                repo_name TEXT PRIMARY KEY,
+                client_id INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(client_id) REFERENCES clients(id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_client_repositories_client
+            ON client_repositories(client_id)
+        """)
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS app_settings (
                 key TEXT PRIMARY KEY,
@@ -332,9 +349,18 @@ class RepositoryDB:
             DELETE FROM repositories 
             WHERE repo_name = ? AND branch = ?
         """, (repo_name, branch))
-        
-        conn.commit()
         deleted = cursor.rowcount > 0
+
+        # Drop the client mapping once the last branch of this repo is gone.
+        cursor.execute(
+            "SELECT COUNT(*) FROM repositories WHERE repo_name = ?", (repo_name,)
+        )
+        if cursor.fetchone()[0] == 0:
+            cursor.execute(
+                "DELETE FROM client_repositories WHERE repo_name = ?", (repo_name,)
+            )
+
+        conn.commit()
         conn.close()
         
         if deleted:
@@ -352,15 +378,23 @@ class RepositoryDB:
             enabled_only: If True, only return enabled repositories
             
         Returns:
-            List of repository dictionaries with keys: repo, branch, enabled, ai_enabled
+            List of repository dictionaries with keys: repo, branch, enabled,
+            ai_enabled, client_id, client_name. The client fields are None
+            when the repository has not been assigned to a client.
         """
         conn = self._connect()
         cursor = conn.cursor()
         
-        query = "SELECT repo_name, branch, enabled, ai_enabled FROM repositories"
+        query = """
+            SELECT r.repo_name, r.branch, r.enabled, r.ai_enabled,
+                   c.id, c.name
+            FROM repositories r
+            LEFT JOIN client_repositories cr ON cr.repo_name = r.repo_name
+            LEFT JOIN clients c ON c.id = cr.client_id
+        """
         if enabled_only:
-            query += " WHERE enabled = 1"
-        query += " ORDER BY repo_name, branch"
+            query += " WHERE r.enabled = 1"
+        query += " ORDER BY r.repo_name, r.branch"
         
         cursor.execute(query)
         rows = cursor.fetchall()
@@ -372,7 +406,9 @@ class RepositoryDB:
                 'repo': row[0],
                 'branch': row[1],
                 'enabled': bool(row[2]),
-                'ai_enabled': bool(row[3])
+                'ai_enabled': bool(row[3]),
+                'client_id': row[4],
+                'client_name': row[5],
             })
         
         return repositories
@@ -392,9 +428,11 @@ class RepositoryDB:
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT repo_name, branch, enabled, ai_enabled 
-            FROM repositories 
-            WHERE repo_name = ? AND branch = ?
+            SELECT r.repo_name, r.branch, r.enabled, r.ai_enabled, c.id, c.name
+            FROM repositories r
+            LEFT JOIN client_repositories cr ON cr.repo_name = r.repo_name
+            LEFT JOIN clients c ON c.id = cr.client_id
+            WHERE r.repo_name = ? AND r.branch = ?
         """, (repo_name, branch))
         
         row = cursor.fetchone()
@@ -405,7 +443,9 @@ class RepositoryDB:
                 'repo': row[0],
                 'branch': row[1],
                 'enabled': bool(row[2]),
-                'ai_enabled': bool(row[3])
+                'ai_enabled': bool(row[3]),
+                'client_id': row[4],
+                'client_name': row[5],
             }
         
         return None
@@ -421,9 +461,9 @@ class RepositoryDB:
         cursor = conn.cursor()
         
         cursor.execute("DELETE FROM repositories")
-        conn.commit()
-        
         deleted = cursor.rowcount
+        cursor.execute("DELETE FROM client_repositories")
+        conn.commit()
         conn.close()
         
         logger.info("Cleared all repositories ({} deleted)".format(deleted))
@@ -532,6 +572,9 @@ class RepositoryDB:
     def delete_client(self, client_id):
         conn = self._connect()
         cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM client_repositories WHERE client_id=?", (client_id,)
+        )
         cursor.execute("DELETE FROM clients WHERE id=?", (client_id,))
         conn.commit()
         deleted = cursor.rowcount > 0
@@ -555,6 +598,90 @@ class RepositoryDB:
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else None
+
+    # ---------------------------------------------------------------------------
+    # Client <-> repository mapping
+    # ---------------------------------------------------------------------------
+
+    def set_client_repositories(self, client_id, repo_names):
+        """Make *repo_names* the exact set of repositories owned by *client_id*.
+
+        Repositories previously owned by this client but absent from
+        *repo_names* are unassigned. Repositories currently owned by another
+        client are reassigned to this one, since a repo has a single owner.
+
+        Returns the number of repositories now mapped to the client.
+        """
+        repo_names = list(dict.fromkeys(repo_names))
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM client_repositories WHERE client_id=?", (client_id,)
+        )
+        for repo_name in repo_names:
+            cursor.execute("""
+                INSERT INTO client_repositories (repo_name, client_id)
+                VALUES (?, ?)
+                ON CONFLICT(repo_name) DO UPDATE SET client_id=excluded.client_id
+            """, (repo_name, client_id))
+        conn.commit()
+        conn.close()
+        logger.info(
+            "Client %s now owns %d repositories", client_id, len(repo_names)
+        )
+        return len(repo_names)
+
+    def assign_repository_to_client(self, repo_name, client_id):
+        """Assign a single repository to a client, or unassign when
+        *client_id* is falsy. Moves the repo if it belonged to someone else."""
+        conn = self._connect()
+        cursor = conn.cursor()
+        if client_id:
+            cursor.execute("""
+                INSERT INTO client_repositories (repo_name, client_id)
+                VALUES (?, ?)
+                ON CONFLICT(repo_name) DO UPDATE SET client_id=excluded.client_id
+            """, (repo_name, client_id))
+        else:
+            cursor.execute(
+                "DELETE FROM client_repositories WHERE repo_name=?", (repo_name,)
+            )
+        conn.commit()
+        conn.close()
+        return True
+
+    def get_repository_client_map(self):
+        """Return {repo_name: {'client_id': int, 'client_name': str}}."""
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT cr.repo_name, c.id, c.name
+            FROM client_repositories cr
+            JOIN clients c ON c.id = cr.client_id
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return {
+            row[0]: {"client_id": row[1], "client_name": row[2]} for row in rows
+        }
+
+    def get_clients_with_repositories(self):
+        """Return all clients, each with a sorted ``repos`` list of the
+        repository names assigned to them."""
+        clients = self.get_clients()
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT client_id, repo_name FROM client_repositories "
+            "ORDER BY repo_name"
+        )
+        by_client = {}
+        for client_id, repo_name in cursor.fetchall():
+            by_client.setdefault(client_id, []).append(repo_name)
+        conn.close()
+        for client in clients:
+            client["repos"] = by_client.get(client["id"], [])
+        return clients
 
     # ---------------------------------------------------------------------------
     # AMC settings and contract persistence

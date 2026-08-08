@@ -382,6 +382,58 @@ class GitHubClient:
             logger.warning(f"Error checking recent commits for {repo_name}@{branch}: {e}")
             return False
 
+    def fetch_commit_authors_since(self, repo_name: str, branch: str, since_date: str) -> List[Dict[str, Any]]:
+        """Fetch lightweight commit/author info for a branch since a given date.
+
+        Unlike fetch_commits(), this is used for aggregate reporting (who
+        committed what, where) rather than full report generation, so it
+        only pulls the fields needed for that: sha, author identity, date.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            branch: Branch name
+            since_date: ISO date string YYYY-MM-DD
+
+        Returns:
+            List of dicts with keys: sha, author_login (may be None),
+            author_name, date. Empty list on error.
+        """
+        commits = []
+        page = 1
+        per_page = 100
+        try:
+            while True:
+                url = f"{self.api_base_url}/repos/{repo_name}/commits"
+                response = self.session.get(
+                    url,
+                    params={
+                        "sha": branch,
+                        "since": f"{since_date}T00:00:00Z",
+                        "page": page,
+                        "per_page": per_page,
+                    },
+                )
+                response.raise_for_status()
+                page_commits = response.json()
+                if not page_commits:
+                    break
+                for c in page_commits:
+                    gh_author = c.get("author") or {}
+                    commit_author = (c.get("commit") or {}).get("author") or {}
+                    commits.append({
+                        "sha": c.get("sha"),
+                        "author_login": gh_author.get("login") if isinstance(gh_author, dict) else None,
+                        "author_name": commit_author.get("name") or "Unknown",
+                        "date": commit_author.get("date"),
+                    })
+                if len(page_commits) < per_page:
+                    break
+                page += 1
+                time.sleep(0.05)
+        except RequestException as e:
+            logger.warning(f"Error fetching commit authors for {repo_name}@{branch}: {e}")
+        return commits
+
     def close(self):
         """Close the GitHub client connection."""
         self.session.close()

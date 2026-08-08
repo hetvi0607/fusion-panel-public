@@ -67,11 +67,11 @@ logger = logging.getLogger(__name__)
 jobs = {}
 
 
-# Background computation of the dashboard's "active repositories" stat.
-# Hitting the GitHub API (branches + per-branch commit checks) synchronously
-# during a page load is slow, so this is always computed in a background
-# thread; the dashboard renders immediately and polls a small JSON endpoint
-# for the result.
+# Background computation of the dashboard's "active repositories" and
+# "active users" stats. Hitting the GitHub API (branches + per-branch commit
+# listings) synchronously during a page load is slow, so this always runs in
+# a background thread; the dashboard renders immediately and polls a small
+# JSON endpoint for the result.
 _ACTIVE_REPOS_TTL_SECONDS = 5 * 60  # 5 minutes
 _active_repos_lock = threading.Lock()
 _active_repos_state = {
@@ -79,26 +79,33 @@ _active_repos_state = {
     "count": None,
     "total": None,
     "active_repos": None,   # sorted list of active repo names, once ready
+    "users": None,          # list of {username, total, repos: [{repo, count}]}
     "computed_at": 0.0,
     "repos_key": None,
 }
 
 
-def _compute_active_repositories(repo_names):
-    """Return the set of repo names with any commit on any branch in the last 30 days.
+def _compute_activity_snapshot(repo_names):
+    """Compute active repos and per-user commit activity over the last 30 days.
 
-    Flattens (repo, branch) pairs and checks them with a large thread pool so
-    wall-clock time depends on network latency, not on the number of
-    repos/branches processed sequentially. Errors are treated as "not active".
+    Flattens (repo, branch) pairs and fetches commit authorship with a large
+    thread pool so wall-clock time depends on network latency, not on the
+    number of repos/branches processed sequentially. A single pass of commit
+    data is reused both to determine which repos are "active" and to build
+    the per-user breakdown, avoiding a second round of API calls.
+
+    Returns:
+        Tuple of (active_repo_names: set[str], users: list[dict]) where each
+        user dict is {"username": str, "total": int, "repos": [{"repo": str, "count": int}]}.
     """
     if not repo_names:
-        return set()
+        return set(), []
 
     try:
         client = GitHubClient()
     except Exception as exc:
-        logger.warning("Could not initialise GitHub client for active-repo check: %s", exc)
-        return set()
+        logger.warning("Could not initialise GitHub client for activity snapshot: %s", exc)
+        return set(), []
 
     from datetime import datetime, timedelta
     since_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
@@ -116,46 +123,77 @@ def _compute_active_repositories(repo_names):
                     logger.warning("Could not list branches for %s: %s", repo_name, exc)
                     branch_map[repo_name] = []
 
-        # Step 2: check all (repo, branch) pairs in parallel, maximizing
-        # concurrency since these are cheap, independent HTTP calls.
-        active = set()
-        active_lock = threading.Lock()
+        # Step 2: fetch commit authorship for all (repo, branch) pairs in
+        # parallel. Branches share ancestry, so the same commit can show up
+        # under multiple branches for the same repo — dedupe by sha per repo.
         pairs = [(r, b) for r, branches in branch_map.items() for b in branches]
+        repo_commits = {r: {} for r in repo_names}  # repo -> {sha: commit_info}
+        repo_commits_lock = threading.Lock()
 
-        def check_pair(pair):
+        def fetch_pair(pair):
             repo_name, branch = pair
-            if repo_name in active:
-                return  # already known active; best-effort skip
             try:
-                if client.has_commits_since(repo_name, branch, since_date):
-                    with active_lock:
-                        active.add(repo_name)
+                commits = client.fetch_commit_authors_since(repo_name, branch, since_date)
             except Exception as exc:
-                logger.warning("Active-repo check failed for %s@%s: %s", repo_name, branch, exc)
+                logger.warning("Commit fetch failed for %s@%s: %s", repo_name, branch, exc)
+                return
+            if not commits:
+                return
+            with repo_commits_lock:
+                bucket = repo_commits[repo_name]
+                for c in commits:
+                    sha = c.get("sha")
+                    if sha:
+                        bucket[sha] = c
 
         if pairs:
             with ThreadPoolExecutor(max_workers=min(len(pairs), 30) or 1) as executor:
-                list(executor.map(check_pair, pairs))
+                list(executor.map(fetch_pair, pairs))
 
-        return active
+        # Step 3: aggregate into active repos + per-user/per-repo counts.
+        active_repos = {r for r, commits in repo_commits.items() if commits}
+        user_totals = {}
+        user_repo_counts = {}
+        for repo_name, commits in repo_commits.items():
+            for c in commits.values():
+                username = c.get("author_login") or c.get("author_name") or "Unknown"
+                user_totals[username] = user_totals.get(username, 0) + 1
+                key = (username, repo_name)
+                user_repo_counts[key] = user_repo_counts.get(key, 0) + 1
+
+        users = []
+        for username, total in sorted(user_totals.items(), key=lambda kv: kv[1], reverse=True):
+            repos_breakdown = sorted(
+                (
+                    {"repo": repo_name, "count": count}
+                    for (uname, repo_name), count in user_repo_counts.items()
+                    if uname == username
+                ),
+                key=lambda r: r["count"],
+                reverse=True,
+            )
+            users.append({"username": username, "total": total, "repos": repos_breakdown})
+
+        return active_repos, users
     finally:
         client.close()
 
 
 def _active_repos_worker(repo_names):
     try:
-        active = _compute_active_repositories(repo_names)
+        active, users = _compute_activity_snapshot(repo_names)
         with _active_repos_lock:
             _active_repos_state.update({
                 "status": "ready",
                 "count": len(active),
                 "total": len(repo_names),
                 "active_repos": sorted(active),
+                "users": users,
                 "computed_at": time.time(),
                 "repos_key": frozenset(repo_names),
             })
     except Exception as exc:
-        logger.warning("Active-repo computation failed: %s", exc)
+        logger.warning("Activity snapshot computation failed: %s", exc)
         with _active_repos_lock:
             _active_repos_state.update({
                 "status": "error",
@@ -165,7 +203,7 @@ def _active_repos_worker(repo_names):
 
 
 def _get_active_repos_state(repo_names):
-    """Return the current active-repos state, kicking off a background
+    """Return the current activity state, kicking off a background
     recompute if the cache is stale, missing, or the repo set changed.
     Never blocks on GitHub API calls.
     """
@@ -443,6 +481,8 @@ def dashboard():
     unique_repo_names = sorted({r["repo"] for r in repos})
     total_repos = len(unique_repo_names)
     total_clients = len(clients)
+    mapped = db.get_repository_client_map()
+    unmapped_repos = len([n for n in unique_repo_names if n not in mapped])
 
     # Active repositories: any commit on any branch in the last 30 days.
     # This never blocks the page load — it kicks off a background
@@ -453,14 +493,16 @@ def dashboard():
     return render_template("dashboard.html",
                            total_clients=total_clients,
                            total_repos=total_repos,
+                           unmapped_repos=unmapped_repos,
                            active_repos_status=state["status"],
                            active_repos=state["count"] if state["status"] == "ready" else None,
-                           active_repos_list=state["active_repos"] if state["status"] == "ready" else None)
+                           active_repos_list=state["active_repos"] if state["status"] == "ready" else None,
+                           active_users=state["users"] if state["status"] == "ready" else None)
 
 
 @app.route("/api/active-repos")
 def api_active_repos():
-    """Poll endpoint for the async active-repositories computation."""
+    """Poll endpoint for the async activity snapshot (active repos + users)."""
     db = get_db()
     repos = db.get_repositories(enabled_only=False)
     unique_repo_names = sorted({r["repo"] for r in repos})
@@ -470,6 +512,7 @@ def api_active_repos():
         "count": state["count"],
         "total": state["total"] if state["total"] is not None else len(unique_repo_names),
         "repos": state["active_repos"] if state["status"] == "ready" else [],
+        "users": state["users"] if state["status"] == "ready" else [],
     })
 
 
@@ -1679,8 +1722,18 @@ def renew_amc(contract_id):
 @app.route("/settings/clients")
 def clients_page():
     db = get_db()
-    clients = db.get_clients()
-    return render_template("clients.html", clients=clients)
+    clients = db.get_clients_with_repositories()
+    repos = db.get_repositories(enabled_only=False)
+    # One row per repository name; a repo may track several branches.
+    all_repos = sorted({r["repo"] for r in repos})
+    repo_client_map = db.get_repository_client_map()
+    return render_template(
+        "clients.html",
+        clients=clients,
+        all_repos=all_repos,
+        repo_client_map=repo_client_map,
+        unassigned_repos=[r for r in all_repos if r not in repo_client_map],
+    )
 
 
 @app.route("/clients")
@@ -1751,10 +1804,42 @@ def delete_client():
     return redirect(url_for("clients_page"))
 
 
+@app.route("/settings/clients/repositories", methods=["POST"])
+def update_client_repositories():
+    """Set the exact list of repositories owned by a client."""
+    db = get_db()
+    try:
+        client_id = int(request.form.get("client_id", "0"))
+    except ValueError:
+        client_id = 0
+    client = db.get_client(client_id)
+    if not client:
+        flash("Client not found.", "error")
+        return redirect(url_for("clients_page"))
+
+    known_repos = {r["repo"] for r in db.get_repositories(enabled_only=False)}
+    selected = [r for r in request.form.getlist("repos") if r in known_repos]
+    count = db.set_client_repositories(client_id, selected)
+    flash(
+        f"{client['name']}: {count} repositor{'y' if count == 1 else 'ies'} mapped.",
+        "success",
+    )
+    return redirect(url_for("clients_page"))
+
+
 @app.route("/api/clients")
 def api_clients():
     db = get_db()
     return jsonify(db.get_clients())
+
+
+@app.route("/api/clients/repositories")
+def api_client_repositories():
+    """Client -> repositories mapping, for filtering repo pickers."""
+    db = get_db()
+    return jsonify({
+        str(c["id"]): c["repos"] for c in db.get_clients_with_repositories()
+    })
 
 
 # ---------------------------------------------------------------------------

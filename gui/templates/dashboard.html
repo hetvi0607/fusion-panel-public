@@ -37,6 +37,9 @@
                 <div class="ml-5">
                     <p class="text-sm font-medium text-gray-500">Total Repositories</p>
                     <p class="text-3xl font-bold text-gray-900">{{ total_repos }}</p>
+                    {% if unmapped_repos %}
+                    <p class="mt-1 text-xs text-amber-600">{{ unmapped_repos }} not mapped to a client</p>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -100,6 +103,53 @@
         {% endif %}
     </ul>
 </div>
+
+<!-- Active Users -->
+<div class="mt-5 bg-white rounded-xl shadow-sm border border-gray-200">
+    <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div>
+            <h2 class="text-lg font-semibold text-gray-900">Active Users</h2>
+            <p class="text-xs text-gray-500">Contributors with commits in the last 30 days, by repository</p>
+        </div>
+        <span id="active-users-count" class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+            {% if active_repos_status == 'ready' %}{{ active_users | length }} users{% else %}<i class="fa-solid fa-spinner fa-spin"></i>{% endif %}
+        </span>
+    </div>
+    <ul id="active-users-list" class="divide-y divide-gray-200">
+        {% if active_repos_status == 'ready' %}
+            {% if active_users %}
+            {% for user in active_users %}
+            <li class="px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0 h-9 w-9 rounded-full bg-indigo-50 flex items-center justify-center">
+                            <i class="fa-solid fa-user text-indigo-500 text-sm"></i>
+                        </div>
+                        <p class="ml-3 text-sm font-semibold text-gray-900">{{ user.username }}</p>
+                    </div>
+                    <span class="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                        {{ user.total }} commit{{ 's' if user.total != 1 else '' }}
+                    </span>
+                </div>
+                <div class="mt-2 ml-12 flex flex-wrap gap-1.5">
+                    {% for r in user.repos %}
+                    <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                        <span class="font-medium text-gray-800 mr-1">{{ r.count }}</span> on {{ r.repo }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </li>
+            {% endfor %}
+            {% else %}
+            <li class="px-6 py-8 text-center text-sm text-gray-500">No commit activity in the last 30 days.</li>
+            {% endif %}
+        {% else %}
+        <li class="px-6 py-8 text-center text-sm text-gray-500">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i>Crunching commit activity…
+        </li>
+        {% endif %}
+    </ul>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -133,6 +183,32 @@ function renderActiveReposList(repos) {
     }).join('');
 }
 
+function renderActiveUsersList(users) {
+    var list = document.getElementById('active-users-list');
+    var countEl = document.getElementById('active-users-count');
+    countEl.textContent = (users ? users.length : 0) + ' users';
+    if (!users || users.length === 0) {
+        list.innerHTML = '<li class="px-6 py-8 text-center text-sm text-gray-500">No commit activity in the last 30 days.</li>';
+        return;
+    }
+    list.innerHTML = users.map(function (user) {
+        var name = escapeHtml(user.username);
+        var repoPills = (user.repos || []).map(function (r) {
+            return '<span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600">' +
+                '<span class="font-medium text-gray-800 mr-1">' + r.count + '</span> on ' + escapeHtml(r.repo) + '</span>';
+        }).join('');
+        return '<li class="px-6 py-4">' +
+            '<div class="flex items-center justify-between">' +
+            '<div class="flex items-center">' +
+            '<div class="flex-shrink-0 h-9 w-9 rounded-full bg-indigo-50 flex items-center justify-center">' +
+            '<i class="fa-solid fa-user text-indigo-500 text-sm"></i></div>' +
+            '<p class="ml-3 text-sm font-semibold text-gray-900">' + name + '</p></div>' +
+            '<span class="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">' +
+            user.total + ' commit' + (user.total !== 1 ? 's' : '') + '</span></div>' +
+            '<div class="mt-2 ml-12 flex flex-wrap gap-1.5">' + repoPills + '</div></li>';
+    }).join('');
+}
+
 {% if active_repos_status != 'ready' %}
 (function () {
     var el = document.getElementById('active-repos-value');
@@ -147,6 +223,7 @@ function renderActiveReposList(repos) {
                     el.innerHTML = data.count + '<span class="text-sm font-normal text-gray-400"> / ' + data.total + '</span>';
                     toggle.disabled = false;
                     renderActiveReposList(data.repos);
+                    renderActiveUsersList(data.users);
                 } else if (data.status === 'error') {
                     el.innerHTML = '<span class="text-gray-400 text-base font-medium">Unavailable</span>';
                 } else if (attempts < 60) {

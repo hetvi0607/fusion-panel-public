@@ -24,6 +24,7 @@
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Address</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">GSTIN</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Repositories</th>
                 <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
         </thead>
@@ -55,9 +56,27 @@
                     <p class="text-xs text-gray-500">{{ client.contact_person }}{% if client.contact_person and client.phone %} · {% endif %}{{ client.phone }}</p>
                     {% endif %}
                 </td>
+                <td class="px-6 py-4">
+                    {% if client.repos %}
+                    <div class="flex flex-wrap gap-1 max-w-xs">
+                        {% for repo in client.repos[:3] %}
+                        <span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-1 text-xs font-mono text-indigo-700">{{ repo }}</span>
+                        {% endfor %}
+                        {% if client.repos|length > 3 %}
+                        <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600">+{{ client.repos|length - 3 }} more</span>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <span class="text-xs text-gray-400">None mapped</span>
+                    {% endif %}
+                </td>
                 <td class="px-6 py-4 text-right">
                     <div class="flex items-center justify-end space-x-2">
-                        <button onclick="openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }}, {{ client.contact_person|tojson }}, {{ client.email|tojson }}, {{ client.phone|tojson }}, {{ client.website|tojson }}, {{ client.signatory_name|tojson }}, {{ client.signatory_title|tojson }})"
+                        <button onclick='openReposModal({{ client.id }}, {{ client.name|tojson }}, {{ client.repos|tojson }})'
+                                class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                            <i class="fa-solid fa-code-branch text-[10px] mr-1"></i> Repos
+                        </button>
+                        <button onclick='openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }}, {{ client.contact_person|tojson }}, {{ client.email|tojson }}, {{ client.phone|tojson }}, {{ client.website|tojson }}, {{ client.signatory_name|tojson }}, {{ client.signatory_title|tojson }})'
                                 class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                             <i class="fa-solid fa-pen text-[10px] mr-1"></i> Edit
                         </button>
@@ -236,10 +255,97 @@
         </div>
     </div>
 </div>
+
+<!-- Repository Mapping Modal -->
+<div id="repos-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex min-h-full items-center justify-center p-4">
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-50 transition-opacity" onclick="document.getElementById('repos-modal').classList.add('hidden')"></div>
+        <div class="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 z-10">
+            <div class="flex items-center justify-between mb-1">
+                <h3 class="text-lg font-semibold text-gray-900">Map Repositories</h3>
+                <button onclick="document.getElementById('repos-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <p class="text-sm text-gray-500 mb-4">Select the repositories belonging to <span id="repos-client-name" class="font-semibold text-gray-700"></span>. A repository can belong to only one client — checking one that is already mapped elsewhere will move it.</p>
+            <form method="POST" action="/settings/clients/repositories">
+                <input type="hidden" name="client_id" id="repos-client-id">
+                {% if all_repos %}
+                <div class="mb-3 flex items-center gap-3">
+                    <input type="text" id="repos-filter" placeholder="Filter repositories…" oninput="filterRepoList(this.value)"
+                           class="flex-1 rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    <button type="button" onclick="toggleAllRepos(true)" class="text-xs font-medium text-indigo-600 hover:text-indigo-500">Select all</button>
+                    <button type="button" onclick="toggleAllRepos(false)" class="text-xs font-medium text-gray-500 hover:text-gray-700">Clear</button>
+                </div>
+                <div class="max-h-80 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+                    {% for repo in all_repos %}
+                    {% set owner = repo_client_map.get(repo) %}
+                    <label class="repo-row flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer" data-repo="{{ repo|lower }}">
+                        <span class="flex items-center min-w-0">
+                            <input type="checkbox" name="repos" value="{{ repo }}"
+                                   class="repo-checkbox h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 mr-3 flex-shrink-0">
+                            <span class="text-sm font-mono text-gray-800 truncate">{{ repo }}</span>
+                        </span>
+                        {% if owner %}
+                        <span class="owner-tag ml-3 flex-shrink-0 inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs text-amber-700"
+                              data-client-id="{{ owner.client_id }}">{{ owner.client_name }}</span>
+                        {% endif %}
+                    </label>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-sm text-gray-500 py-6 text-center">No repositories tracked yet. Add them under <a href="/settings/repositories" class="text-indigo-600 hover:text-indigo-500">Repositories</a> first.</p>
+                {% endif %}
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button type="button" onclick="document.getElementById('repos-modal').classList.add('hidden')"
+                            class="rounded-lg bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+                    <button type="submit"
+                            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
+                        <i class="fa-solid fa-floppy-disk mr-1"></i> Save Mapping
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function openReposModal(id, name, assigned) {
+    document.getElementById('repos-client-id').value = id;
+    document.getElementById('repos-client-name').textContent = name;
+    var selected = new Set(assigned || []);
+    document.querySelectorAll('#repos-modal .repo-checkbox').forEach(function (cb) {
+        cb.checked = selected.has(cb.value);
+    });
+    // Hide the "owned by" tag on rows this client already owns.
+    document.querySelectorAll('#repos-modal .owner-tag').forEach(function (tag) {
+        tag.classList.toggle('hidden', tag.dataset.clientId === String(id));
+    });
+    var filter = document.getElementById('repos-filter');
+    if (filter) {
+        filter.value = '';
+        filterRepoList('');
+    }
+    document.getElementById('repos-modal').classList.remove('hidden');
+}
+
+function filterRepoList(term) {
+    var needle = (term || '').toLowerCase();
+    document.querySelectorAll('#repos-modal .repo-row').forEach(function (row) {
+        row.classList.toggle('hidden', needle && row.dataset.repo.indexOf(needle) === -1);
+    });
+}
+
+function toggleAllRepos(checked) {
+    document.querySelectorAll('#repos-modal .repo-row').forEach(function (row) {
+        if (row.classList.contains('hidden')) return;
+        var cb = row.querySelector('.repo-checkbox');
+        if (cb) cb.checked = checked;
+    });
+}
+
 function openEditModal(id, name, addr1, addr2, gstin, contact, contactPerson, email, phone, website, signatoryName, signatoryTitle) {
     document.getElementById('edit-client-id').value = id;
     document.getElementById('edit-name').value = name;
