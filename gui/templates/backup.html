@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Backup & Restore - Example Company{% endblock %}
+{% block title %}Backup & Restore - FusionPanel{% endblock %}
 
 {% block content %}
 {% include "_settings_nav.html" %}
@@ -77,6 +77,7 @@
             <div class="mt-5">
                 <p class="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">Tables</p>
                 <div class="overflow-hidden rounded-lg border border-gray-200">
+                    <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50">
                             <tr>
@@ -93,6 +94,7 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             </div>
             <div class="mt-5">
@@ -186,6 +188,7 @@
         <i class="fa-solid fa-clock-rotate-left text-gray-500 mr-2"></i>Saved Backups
     </h2>
     <div class="overflow-hidden rounded-lg border border-gray-200">
+        <div class="overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50">
                 <tr>
@@ -204,6 +207,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
     <p class="mt-3 text-xs text-gray-500">
         Backups are stored next to the live database in <span class="font-mono">data/</span>.
@@ -211,4 +215,6 @@
     </p>
 </section>
 {% endif %}
+    </div>
+</div>
 {% endblock %}

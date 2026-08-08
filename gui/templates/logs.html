@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Logs - Example Company{% endblock %}
+{% block title %}Logs - FusionPanel{% endblock %}
 
 {% block content %}
 {% include "_settings_nav.html" %}
@@ -55,6 +55,8 @@
     <pre id="log-output" class="max-h-[70vh] overflow-y-auto p-4 text-xs leading-relaxed text-gray-200 font-mono whitespace-pre-wrap break-all">{% if lines %}{% for line in lines %}{{ line }}
 {% endfor %}{% else %}(log file is empty){% endif %}</pre>
 </section>
+    </div>
+</div>
 
 <script>
 (function () {

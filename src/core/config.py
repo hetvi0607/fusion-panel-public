@@ -94,6 +94,11 @@ class Config:
     BATCH_SIZE = int(os.getenv("BATCH_SIZE", 100))  # Number of commits to process in batch
     PARALLEL_PROCESSING = os.getenv("PARALLEL_PROCESSING", "False").lower() in ("true", "1", "yes")
     MAX_WORKERS = int(os.getenv("MAX_WORKERS", 5))  # Number of worker threads/processes
+
+    # Dashboard settings
+    DASHBOARD_ACTIVITY_CACHE_MINUTES = int(
+        os.getenv("DASHBOARD_ACTIVITY_CACHE_MINUTES", 5)
+    )  # How long the "active repos/users" GitHub activity snapshot stays cached
     
     # Retry settings
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", 3))

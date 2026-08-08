@@ -30,6 +30,7 @@ class SettingsTests(unittest.TestCase):
                 "max_workers": "4",
                 "batch_size": "80",
                 "log_level": "WARNING",
+                "dashboard_activity_cache_minutes": "720",
             }
             with (
                 patch.object(app_module, "get_db", return_value=db),
@@ -44,6 +45,7 @@ class SettingsTests(unittest.TestCase):
                 self.assertEqual(stored["AI_MAX_TOKENS"], 6000)
                 self.assertEqual(stored["MAX_WORKERS"], 4)
                 self.assertEqual(stored["BATCH_SIZE"], 80)
+                self.assertEqual(stored["DASHBOARD_ACTIVITY_CACHE_MINUTES"], 720)
                 self.assertTrue(stored["AI_ENABLED"])
                 self.assertTrue(stored["PARALLEL_PROCESSING"])
 
@@ -81,6 +83,7 @@ class SettingsTests(unittest.TestCase):
                 "max_workers": "2",
                 "batch_size": "50",
                 "log_level": "INFO",
+                "dashboard_activity_cache_minutes": "5",
             }
             with (
                 patch.object(app_module, "get_db", return_value=db),

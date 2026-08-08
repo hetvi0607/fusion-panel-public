@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Generate Invoice - Example Company{% endblock %}
+{% block title %}Generate Invoice - FusionPanel{% endblock %}
 
 {% block content %}
 <div class="mb-8">
@@ -89,7 +89,8 @@
                                     data-addr1="{{ c.address_line1 }}"
                                     data-addr2="{{ c.address_line2 }}"
                                     data-gstin="{{ c.gstin }}"
-                                    data-contact="{{ c.contact }}">{{ c.name }}</option>
+                                    data-contact="{{ c.contact }}"
+                                    data-repos="{{ c.repos|join(',') }}">{{ c.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -187,7 +188,7 @@
                     {% for repo in repos %}
                     <div class="p-3 rounded-lg border border-gray-200 hover:border-orange-300 hover:bg-orange-50/30 transition-colors">
                         <label class="flex items-center cursor-pointer">
-                            <input type="checkbox" name="repos" value="{{ repo.repo }}:{{ repo.branch }}" checked
+                            <input type="checkbox" name="repos" value="{{ repo.repo }}:{{ repo.branch }}"
                                    class="repo-checkbox h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500">
                             <div class="ml-3 flex-1 min-w-0">
                                 <p class="text-sm font-medium text-gray-900 truncate">{{ repo.repo }}</p>
@@ -367,6 +368,16 @@ function fillClientDetails(sel) {
     document.getElementById('bill_to_addr1').value = opt.dataset.addr1   || '';
     document.getElementById('bill_to_addr2').value = opt.dataset.addr2   || '';
     document.getElementById('bill_to_gstin').value = opt.dataset.gstin   || '';
+
+    const mappedRepos = (opt.dataset.repos || '').split(',').map(r => r.trim()).filter(r => r);
+    document.querySelectorAll('.repo-checkbox').forEach(cb => cb.checked = false);
+    if (mappedRepos.length) {
+        document.querySelectorAll('.repo-checkbox').forEach(cb => {
+            if (mappedRepos.some(repo => cb.value.startsWith(repo + ':'))) {
+                cb.checked = true;
+            }
+        });
+    }
 }
 
 function setInvoiceType(type) {

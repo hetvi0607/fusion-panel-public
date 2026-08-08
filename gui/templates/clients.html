@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Clients - Example Company{% endblock %}
+{% block title %}Clients - FusionPanel{% endblock %}
 
 {% block content %}
 {% include "_settings_nav.html" %}
@@ -17,6 +17,7 @@
 <!-- Client Table -->
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
     {% if clients %}
+    <div class="overflow-x-auto">
     <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
             <tr>
@@ -93,6 +94,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% else %}
     <div class="text-center py-16">
         <i class="fa-solid fa-building text-gray-300 text-5xl mb-4"></i>
@@ -306,6 +308,8 @@
                 </div>
             </form>
         </div>
+    </div>
+</div>
     </div>
 </div>
 {% endblock %}

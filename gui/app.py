@@ -72,8 +72,8 @@ jobs = {}
 # "active users" stats. Hitting the GitHub API (branches + per-branch commit
 # listings) synchronously during a page load is slow, so this always runs in
 # a background thread; the dashboard renders immediately and polls a small
-# JSON endpoint for the result.
-_ACTIVE_REPOS_TTL_SECONDS = 5 * 60  # 5 minutes
+# JSON endpoint for the result. How long the cached snapshot is considered
+# fresh is configurable in Settings (app_config.DASHBOARD_ACTIVITY_CACHE_MINUTES).
 _active_repos_lock = threading.Lock()
 _active_repos_state = {
     "status": "idle",       # idle | computing | ready | error
@@ -214,10 +214,11 @@ def _get_active_repos_state(repo_names):
 
     with _active_repos_lock:
         state = dict(_active_repos_state)
+        ttl_seconds = max(1, int(app_config.DASHBOARD_ACTIVITY_CACHE_MINUTES or 5)) * 60
         fresh = (
             state["status"] == "ready"
             and state["repos_key"] == key
-            and (now - state["computed_at"]) < _ACTIVE_REPOS_TTL_SECONDS
+            and (now - state["computed_at"]) < ttl_seconds
         )
         already_computing = state["status"] == "computing" and state["repos_key"] == key
         if not fresh and not already_computing:
@@ -362,6 +363,7 @@ RUNTIME_SETTING_KEYS = (
     "MAX_WORKERS",
     "BATCH_SIZE",
     "LOG_LEVEL",
+    "DASHBOARD_ACTIVITY_CACHE_MINUTES",
 )
 
 
@@ -861,7 +863,7 @@ def invoice_page():
     now = datetime.now()
     default_start = datetime(now.year, now.month, 1).strftime("%Y-%m-%d")
     default_end = now.strftime("%Y-%m-%d")
-    clients = db.get_clients()
+    clients = db.get_clients_with_repositories()
     return render_template("generate_invoice.html",
                            repos=repos,
                            clients=clients,
@@ -2174,6 +2176,14 @@ def settings_page():
             if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
                 raise ValueError("Select a valid log level.")
 
+            dashboard_cache_minutes = int(
+                request.form.get("dashboard_activity_cache_minutes", "").strip()
+            )
+            if not 1 <= dashboard_cache_minutes <= 1440:
+                raise ValueError(
+                    "Dashboard activity cache must be between 1 and 1,440 minutes (24 hours)."
+                )
+
             values = {
                 "GITHUB_TOKEN": current.get("GITHUB_TOKEN", ""),
                 "CLAUDE_API_KEY": current.get("CLAUDE_API_KEY", ""),
@@ -2187,6 +2197,7 @@ def settings_page():
                 "MAX_WORKERS": max_workers,
                 "BATCH_SIZE": batch_size,
                 "LOG_LEVEL": log_level,
+                "DASHBOARD_ACTIVITY_CACHE_MINUTES": dashboard_cache_minutes,
             }
             github_token = request.form.get("github_token", "").strip()
             claude_key = request.form.get("claude_api_key", "").strip()
