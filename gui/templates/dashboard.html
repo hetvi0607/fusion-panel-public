@@ -65,7 +65,7 @@
                         <i class="fa-solid fa-spinner fa-spin text-gray-300 text-xl"></i>
                         {% endif %}
                     </p>
-                    <p class="mt-0.5 text-xs text-gray-400">Commits in the last 30 days</p>
+                    <p class="mt-0.5 text-xs text-gray-400">Configured branches, last 30 days</p>
                 </div>
             </div>
         </div>
@@ -83,7 +83,7 @@
 <div id="active-repos-list-panel" class="hidden mt-5 bg-white rounded-xl shadow-sm border border-gray-200">
     <div class="px-6 py-4 border-b border-gray-200">
         <h2 class="text-lg font-semibold text-gray-900">Active Repositories</h2>
-        <p class="text-xs text-gray-500">Repositories with at least one commit on any branch in the last 30 days</p>
+        <p class="text-xs text-gray-500">Repositories with commits on configured branches in the last 30 days</p>
     </div>
     <ul id="active-repos-list" class="divide-y divide-gray-200">
         {% if active_repos_list %}
@@ -109,7 +109,7 @@
     <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
         <div>
             <h2 class="text-lg font-semibold text-gray-900">Active Users</h2>
-            <p class="text-xs text-gray-500">Contributors with commits in the last 30 days, by repository</p>
+            <p class="text-xs text-gray-500">Up to 100 recent commits per configured branch, by repository</p>
         </div>
         <span id="active-users-count" class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
             {% if active_repos_status == 'ready' %}{{ active_users | length }} users{% else %}<i class="fa-solid fa-spinner fa-spin"></i>{% endif %}

@@ -51,16 +51,7 @@ class GitHubClient:
         adapter = requests.adapters.HTTPAdapter(pool_connections=32, pool_maxsize=32)
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
-
-        # Test the connection
-        try:
-            response = self.session.get(f"{self.api_base_url}/user")
-            response.raise_for_status()
-            self.authenticated_user = response.json().get("login")
-            logger.info(f"GitHub client initialized as user: {self.authenticated_user}")
-        except Exception as e:
-            logger.error(f"Error initializing GitHub client: {str(e)}")
-            raise
+        self.authenticated_user = None
     
     def get_repo(self, repo_name: str) -> Dict:
         """Get a repository by name.
@@ -175,8 +166,22 @@ class GitHubClient:
             return all_commits
             
         except RequestException as e:
-            logger.error(f"Error fetching commits from {repo_name}: {str(e)}")
-            return []
+            response = getattr(e, "response", None)
+            github_message = None
+            if response is not None:
+                try:
+                    github_message = response.json().get("message")
+                except (ValueError, AttributeError):
+                    pass
+            error_message = (
+                f"GitHub API error ({response.status_code}): {github_message}"
+                if response is not None and github_message
+                else str(e)
+            )
+            logger.error(
+                f"Error fetching commits from {repo_name}: {error_message}"
+            )
+            raise RuntimeError(error_message) from e
     
     def _extract_commit_data(self, commit: Dict[str, Any], repo_name: str) -> Dict[str, Any]:
         """Extract relevant data from a GitHub commit.
@@ -382,7 +387,13 @@ class GitHubClient:
             logger.warning(f"Error checking recent commits for {repo_name}@{branch}: {e}")
             return False
 
-    def fetch_commit_authors_since(self, repo_name: str, branch: str, since_date: str) -> List[Dict[str, Any]]:
+    def fetch_commit_authors_since(
+        self,
+        repo_name: str,
+        branch: str,
+        since_date: str,
+        max_pages: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
         """Fetch lightweight commit/author info for a branch since a given date.
 
         Unlike fetch_commits(), this is used for aggregate reporting (who
@@ -393,6 +404,7 @@ class GitHubClient:
             repo_name: Repository name in format "owner/repo"
             branch: Branch name
             since_date: ISO date string YYYY-MM-DD
+            max_pages: Optional upper bound on pages to fetch
 
         Returns:
             List of dicts with keys: sha, author_login (may be None),
@@ -426,7 +438,9 @@ class GitHubClient:
                         "author_name": commit_author.get("name") or "Unknown",
                         "date": commit_author.get("date"),
                     })
-                if len(page_commits) < per_page:
+                if len(page_commits) < per_page or (
+                    max_pages is not None and page >= max_pages
+                ):
                     break
                 page += 1
                 time.sleep(0.05)

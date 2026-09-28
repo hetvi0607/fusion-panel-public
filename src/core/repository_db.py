@@ -172,6 +172,8 @@ class RepositoryDB:
             "website": "TEXT DEFAULT ''",
             "signatory_name": "TEXT DEFAULT ''",
             "signatory_title": "TEXT DEFAULT ''",
+            "po_number": "TEXT DEFAULT ''",
+            "per_hour_rate": "REAL DEFAULT 0",
         })
 
         # Maps a repository to the client it belongs to. Keyed on repo_name
@@ -289,7 +291,15 @@ class RepositoryDB:
         finally:
             conn.close()
     
-    def update_repository(self, repo_name, branch, enabled=None, ai_enabled=None):
+    def update_repository(
+        self,
+        repo_name,
+        branch,
+        enabled=None,
+        ai_enabled=None,
+        new_repo_name=None,
+        new_branch=None,
+    ):
         """
         Update a repository configuration.
         
@@ -298,12 +308,16 @@ class RepositoryDB:
             branch: Branch name
             enabled: Whether the repository is enabled (None = no change)
             ai_enabled: Whether AI analysis is enabled (None = no change)
+            new_repo_name: Replacement repository name (None = no change)
+            new_branch: Replacement branch name (None = no change)
             
         Returns:
             True if updated successfully, False otherwise
         """
         conn = self._connect()
         cursor = conn.cursor()
+        new_repo_name = repo_name if new_repo_name is None else new_repo_name
+        new_branch = branch if new_branch is None else new_branch
         
         updates = []
         params = []
@@ -315,6 +329,14 @@ class RepositoryDB:
         if ai_enabled is not None:
             updates.append("ai_enabled = ?")
             params.append(1 if ai_enabled else 0)
+
+        if new_repo_name != repo_name:
+            updates.append("repo_name = ?")
+            params.append(new_repo_name)
+
+        if new_branch != branch:
+            updates.append("branch = ?")
+            params.append(new_branch)
         
         if not updates:
             return False
@@ -329,11 +351,49 @@ class RepositoryDB:
             WHERE repo_name = ? AND branch = ?
         """
         
-        cursor.execute(query, params)
-        conn.commit()
-        
-        updated = cursor.rowcount > 0
-        conn.close()
+        try:
+            cursor.execute(
+                "SELECT client_id FROM client_repositories WHERE repo_name = ?",
+                (repo_name,),
+            )
+            existing_mapping = cursor.fetchone()
+            if new_repo_name != repo_name and existing_mapping:
+                cursor.execute(
+                    "SELECT client_id FROM client_repositories WHERE repo_name = ?",
+                    (new_repo_name,),
+                )
+                target_mapping = cursor.fetchone()
+                if target_mapping and target_mapping[0] != existing_mapping[0]:
+                    conn.rollback()
+                    return False
+                if not target_mapping:
+                    cursor.execute(
+                        "INSERT INTO client_repositories (repo_name, client_id) "
+                        "VALUES (?, ?)",
+                        (new_repo_name, existing_mapping[0]),
+                    )
+
+            cursor.execute(query, params)
+            updated = cursor.rowcount > 0
+            if updated:
+                if new_repo_name != repo_name:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM repositories WHERE repo_name = ?",
+                        (repo_name,),
+                    )
+                    if cursor.fetchone()[0] == 0:
+                        cursor.execute(
+                            "DELETE FROM client_repositories WHERE repo_name = ?",
+                            (repo_name,),
+                        )
+                conn.commit()
+            else:
+                conn.rollback()
+        except _IntegrityError:
+            conn.rollback()
+            updated = False
+        finally:
+            conn.close()
         
         if updated:
             logger.info("Updated repository: {} (branch: {})".format(repo_name, branch))
@@ -526,6 +586,8 @@ class RepositoryDB:
         website='',
         signatory_name='',
         signatory_title='',
+        po_number='',
+        per_hour_rate=0,
     ):
         conn = self._connect()
         cursor = conn.cursor()
@@ -533,13 +595,13 @@ class RepositoryDB:
             INSERT INTO clients (
                 name, address_line1, address_line2, gstin, contact,
                 contact_person, email, phone, website,
-                signatory_name, signatory_title
+                signatory_name, signatory_title, po_number, per_hour_rate
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             name, address_line1, address_line2, gstin, contact,
             contact_person, email, phone, website,
-            signatory_name, signatory_title,
+            signatory_name, signatory_title, po_number, per_hour_rate,
         ))
         conn.commit()
         client_id = cursor.lastrowid
@@ -560,6 +622,8 @@ class RepositoryDB:
         website='',
         signatory_name='',
         signatory_title='',
+        po_number='',
+        per_hour_rate=0,
     ):
         conn = self._connect()
         cursor = conn.cursor()
@@ -567,13 +631,15 @@ class RepositoryDB:
             UPDATE clients
             SET name=?, address_line1=?, address_line2=?, gstin=?, contact=?,
                 contact_person=?, email=?, phone=?, website=?,
-                signatory_name=?, signatory_title=?,
+                signatory_name=?, signatory_title=?, po_number=?,
+                per_hour_rate=?,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
         """, (
             name, address_line1, address_line2, gstin, contact,
             contact_person, email, phone, website,
-            signatory_name, signatory_title, client_id,
+            signatory_name, signatory_title, po_number, per_hour_rate,
+            client_id,
         ))
         conn.commit()
         updated = cursor.rowcount > 0

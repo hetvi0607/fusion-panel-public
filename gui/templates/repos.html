@@ -187,15 +187,19 @@
                 </button>
             </div>
             <form method="POST" action="/settings/repositories/update" class="space-y-4">
-                <input type="hidden" name="repo_name" id="edit-repo-name">
-                <input type="hidden" name="branch" id="edit-branch">
+                <input type="hidden" name="original_repo_name" id="edit-original-repo-name">
+                <input type="hidden" name="original_branch" id="edit-original-branch">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Repository</label>
-                    <p id="edit-display-name" class="text-sm text-gray-900 font-medium bg-gray-50 rounded-lg px-3 py-2"></p>
+                    <input type="text" name="repo_name" id="edit-repo-name" required
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                 </div>
-                <div>
+                <div class="relative">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Branch</label>
-                    <p id="edit-display-branch" class="text-sm text-gray-900 font-medium bg-gray-50 rounded-lg px-3 py-2"></p>
+                    <input type="text" name="branch" id="edit-branch" required
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
+                    <ul id="edit-branch-suggestions"
+                        class="hidden absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto text-sm"></ul>
                 </div>
                 <div class="flex items-center space-x-6">
                     <label class="flex items-center space-x-2 cursor-pointer">
@@ -258,15 +262,88 @@
 })();
 {% endif %}
 
+let editBranchOptions = [];
+let editBranchRequestId = 0;
+let editRepoDebounce;
+let editBranchDebounce;
+
+function loadEditBranches(repo, selectedBranch) {
+    const input = document.getElementById('edit-branch');
+    const suggestions = document.getElementById('edit-branch-suggestions');
+    const requestId = ++editBranchRequestId;
+    editBranchOptions = [];
+    suggestions.classList.add('hidden');
+    if (!repo.trim()) return;
+
+    fetch(`/api/github/branches?repo=${encodeURIComponent(repo.trim())}`)
+        .then(response => response.json())
+        .then(branches => {
+            if (requestId !== editBranchRequestId || !Array.isArray(branches)) return;
+            editBranchOptions = branches;
+            if (selectedBranch && branches.includes(selectedBranch)) {
+                input.value = selectedBranch;
+            } else if (!selectedBranch && branches.length) {
+                const preferred = ['main', 'master', 'develop'];
+                input.value = branches.find(branch => preferred.includes(branch)) || branches[0];
+            }
+        })
+        .catch(() => {
+            if (requestId === editBranchRequestId) editBranchOptions = [];
+        });
+}
+
 function openEditModal(repo, branch, enabled, aiEnabled) {
+    document.getElementById('edit-original-repo-name').value = repo;
+    document.getElementById('edit-original-branch').value = branch;
     document.getElementById('edit-repo-name').value = repo;
     document.getElementById('edit-branch').value = branch;
-    document.getElementById('edit-display-name').textContent = repo;
-    document.getElementById('edit-display-branch').textContent = branch;
     document.getElementById('edit-enabled').checked = enabled;
     document.getElementById('edit-ai-enabled').checked = aiEnabled;
     document.getElementById('edit-modal').classList.remove('hidden');
+    loadEditBranches(repo, branch);
 }
+
+(function () {
+    const repoInput = document.getElementById('edit-repo-name');
+    const branchInput = document.getElementById('edit-branch');
+    const branchSuggestions = document.getElementById('edit-branch-suggestions');
+
+    function showBranches(query) {
+        const filtered = query
+            ? editBranchOptions.filter(branch => branch.toLowerCase().includes(query.toLowerCase()))
+            : editBranchOptions;
+        branchSuggestions.replaceChildren();
+        filtered.forEach(branch => {
+            const option = document.createElement('li');
+            option.className = 'px-3 py-2 hover:bg-indigo-50 cursor-pointer';
+            option.textContent = branch;
+            option.addEventListener('click', () => {
+                branchInput.value = branch;
+                branchSuggestions.classList.add('hidden');
+            });
+            branchSuggestions.appendChild(option);
+        });
+        branchSuggestions.classList.toggle('hidden', filtered.length === 0);
+    }
+
+    repoInput.addEventListener('input', () => {
+        clearTimeout(editRepoDebounce);
+        editRepoDebounce = setTimeout(() => loadEditBranches(repoInput.value, ''), 300);
+    });
+
+    branchInput.addEventListener('input', () => {
+        clearTimeout(editBranchDebounce);
+        editBranchDebounce = setTimeout(() => showBranches(branchInput.value.trim()), 150);
+    });
+
+    branchInput.addEventListener('focus', () => showBranches(branchInput.value.trim()));
+
+    document.addEventListener('click', event => {
+        if (!branchInput.contains(event.target) && !branchSuggestions.contains(event.target)) {
+            branchSuggestions.classList.add('hidden');
+        }
+    });
+})();
 
 // ---- Add-modal: repo autocomplete + branch autocomplete ----
 (function () {

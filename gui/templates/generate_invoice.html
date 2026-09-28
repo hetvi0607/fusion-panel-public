@@ -90,6 +90,8 @@
                                     data-addr2="{{ c.address_line2 }}"
                                     data-gstin="{{ c.gstin }}"
                                     data-contact="{{ c.contact }}"
+                                    data-po-number="{{ c.po_number }}"
+                                    data-per-hour-rate="{{ c.per_hour_rate or 0 }}"
                                     data-repos="{{ c.repos|join(',') }}">{{ c.name }}</option>
                             {% endfor %}
                         </select>
@@ -132,7 +134,7 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">PO #</label>
-                        <input type="text" name="po_number" placeholder="e.g. 9293"
+                        <input type="text" name="po_number" id="po_number_field" placeholder="e.g. 9293"
                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 text-sm px-3 py-2 border">
                     </div>
                     <div>
@@ -368,6 +370,8 @@ function fillClientDetails(sel) {
     document.getElementById('bill_to_addr1').value = opt.dataset.addr1   || '';
     document.getElementById('bill_to_addr2').value = opt.dataset.addr2   || '';
     document.getElementById('bill_to_gstin').value = opt.dataset.gstin   || '';
+    document.getElementById('po_number_field').value = opt.dataset.poNumber || '';
+    document.getElementById('per_hour_rate_field').value = opt.dataset.perHourRate || '';
 
     const mappedRepos = (opt.dataset.repos || '').split(',').map(r => r.trim()).filter(r => r);
     document.querySelectorAll('.repo-checkbox').forEach(cb => cb.checked = false);
