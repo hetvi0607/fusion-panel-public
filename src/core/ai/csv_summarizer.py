@@ -6,9 +6,9 @@ import csv
 import logging
 from typing import List, Dict, Any
 from datetime import datetime
-import anthropic
 
 from src.core.config import app_config
+from src.core.llm_client import LLMClient
 
 # Configure logger
 logging.basicConfig(
@@ -25,8 +25,9 @@ class AICsvSummarizer:
     
     def __init__(self):
         """Initialize the AI CSV summarizer."""
-        self.client = anthropic.Anthropic(api_key=app_config.CLAUDE_API_KEY)
-        self.model = app_config.CLAUDE_MODEL
+        api_key = app_config.LLM_API_KEY or app_config.CLAUDE_API_KEY
+        self.client = LLMClient(api_key=api_key)
+        self.model = app_config.LLM_MODEL or app_config.CLAUDE_MODEL
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         logger.info("AI CSV summarizer initialized")
@@ -235,15 +236,23 @@ Keep it concise and high-level."""
     
     def get_usage_stats(self) -> Dict[str, Any]:
         """Get token usage statistics.
-        
+
         Returns:
             Dictionary with token usage and estimated cost
         """
+        input_cost_per_million = getattr(
+            app_config, "LLM_INPUT_COST_PER_MILLION",
+            app_config.CLAUDE_INPUT_COST_PER_MILLION,
+        )
+        output_cost_per_million = getattr(
+            app_config, "LLM_OUTPUT_COST_PER_MILLION",
+            app_config.CLAUDE_OUTPUT_COST_PER_MILLION,
+        )
         estimated_cost = (
             (self.total_input_tokens / 1_000_000)
-            * app_config.CLAUDE_INPUT_COST_PER_MILLION
+            * input_cost_per_million
             + (self.total_output_tokens / 1_000_000)
-            * app_config.CLAUDE_OUTPUT_COST_PER_MILLION
+            * output_cost_per_million
         )
         
         return {

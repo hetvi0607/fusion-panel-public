@@ -16,9 +16,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
-import anthropic
-
 from src.core.config import app_config
+from src.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -186,10 +185,11 @@ class InvoiceGenerator:
     def __init__(self, enable_ai: bool = True):
         self.client = None
         if enable_ai:
-            if not app_config.CLAUDE_API_KEY:
-                raise ValueError("Claude API key is required for AI categorization")
-            self.client = anthropic.Anthropic(api_key=app_config.CLAUDE_API_KEY)
-        self.model = app_config.CLAUDE_MODEL
+            api_key = app_config.LLM_API_KEY or app_config.CLAUDE_API_KEY
+            if not api_key:
+                raise ValueError("LLM API key is required for AI categorization")
+            self.client = LLMClient(api_key=api_key)
+        self.model = app_config.LLM_MODEL or app_config.CLAUDE_MODEL
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         logger.info("InvoiceGenerator initialized")
@@ -301,6 +301,7 @@ Commits:
         per_hour_rate: float = 0,
         currency: str = "INR",
         pricing_mode: str = "hourly",
+        expenses: Optional[List[Dict[str, Any]]] = None,
         from_info: Optional[Dict[str, str]] = None,
         footer_info: Optional[Dict[str, str]] = None,
         logo_path: Optional[str] = None,
@@ -317,6 +318,9 @@ Commits:
             per_hour_rate: rate per hour for total amount calculation
             currency: "INR" or "USD"
             pricing_mode: "hourly" or "fixed"
+            expenses: optional list of {"name", "description", "amount"}
+                dicts for additional 3rd-party charges billed to the client
+                (added on top of the work total)
             from_info: override sender info (defaults to DEFAULT_FROM)
             footer_info: override footer info (defaults to DEFAULT_FOOTER)
             logo_path: path to company logo image (defaults to gui/static/logo.png)
@@ -357,13 +361,23 @@ Commits:
         self._add_billing_section(doc, bill_to, invoice_meta)
 
         # ===== WORK DETAILS TABLE =====
-        self._add_work_details_table(
+        work_total, has_total = self._add_work_details_table(
             doc,
             work_details,
             per_hour_rate,
             currency,
             pricing_mode,
         )
+
+        # ===== ADDITIONAL CHARGES (3rd-party services) =====
+        expenses = expenses or []
+        if expenses:
+            expense_total = self._add_expenses_table(
+                doc, expenses, currency, work_total
+            )
+            self._add_amount_in_words(doc, work_total + expense_total, currency)
+        elif has_total:
+            self._add_amount_in_words(doc, work_total, currency)
 
         # ===== FOOTER =====
         self._add_footer(doc, footer)
@@ -504,7 +518,13 @@ Commits:
         currency: str = "INR",
         pricing_mode: str = "hourly",
     ):
-        """Build the invoice line-items table and its totals."""
+        """Build the invoice line-items table and its totals.
+
+        Returns:
+            (work_total, has_total): work_total is the invoice amount from
+            work items (0 when no per-hour rate is set); has_total is True
+            when a monetary total was shown in the table.
+        """
         is_fixed = pricing_mode == "fixed"
         value_heading = "AMOUNT" if is_fixed else "HOURS"
         # Heading
@@ -581,7 +601,11 @@ Commits:
             rt.bold = True
             rt.font.size = Pt(10)
 
-            hours = detail.get("hours", 0)
+            raw_hours = float(detail.get("hours", 0) or 0)
+            if is_fixed:
+                hours = raw_hours
+            else:
+                hours = round(raw_hours * app_config.HOURS_MULTIPLIER)
             total_hours += hours
             amount = float(detail.get("amount", 0) or 0)
             total_amount += amount
@@ -622,9 +646,8 @@ Commits:
             rav.bold = True
             rav.font.size = Pt(12)
 
-            self._add_amount_in_words(doc, total_amount, currency)
             doc.add_paragraph().paragraph_format.space_after = Pt(8)
-            return
+            return total_amount, True
 
         # Total Hours row
         total_row = table.add_row()
@@ -681,9 +704,112 @@ Commits:
             rav.bold = True
             rav.font.size = Pt(12)
 
-            self._add_amount_in_words(doc, total_amount, currency)
-
         doc.add_paragraph().paragraph_format.space_after = Pt(8)
+        return total_amount, bool(per_hour_rate and per_hour_rate > 0)
+
+    def _add_expenses_table(
+        self,
+        doc: Document,
+        expenses: List[Dict[str, Any]],
+        currency: str,
+        work_total: float,
+    ) -> float:
+        """Add a table for additional 3rd-party charges and a grand total.
+
+        Returns the sum of all expense amounts.
+        """
+        sym = CURRENCY_SYMBOLS.get(currency, "₹")
+
+        heading = doc.add_paragraph()
+        heading.paragraph_format.space_before = Pt(6)
+        heading.paragraph_format.space_after = Pt(4)
+        hr = heading.add_run("Additional Charges (3rd-Party Services)")
+        hr.bold = True
+        hr.font.size = Pt(11)
+        hr.font.color.rgb = RGBColor(0x1A, 0x1A, 0x1A)
+
+        table = doc.add_table(rows=1 + len(expenses), cols=3)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        self._set_table_borders(table)
+
+        tbl = table._tbl
+        tbl.tblPr.append(parse_xml(
+            f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'
+        ))
+        col_widths = [Inches(0.6), Inches(4.6), Inches(1.3)]
+        for row in table.rows:
+            for i, width in enumerate(col_widths):
+                tc = row.cells[i]._tc
+                tcPr = tc.get_or_add_tcPr()
+                tcW = parse_xml(
+                    f'<w:tcW {nsdecls("w")} w:w="{int(width.emu / 635)}" w:type="dxa"/>'
+                )
+                tcPr.append(tcW)
+
+        hdr = table.rows[0]
+        for idx, text in enumerate(["SR. NO.", "ON ACCOUNT OF", "AMOUNT"]):
+            cell = hdr.cells[idx]
+            p = cell.paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(text)
+            run.bold = True
+            run.font.size = Pt(9)
+            run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+
+        expense_total = 0.0
+        for i, expense in enumerate(expenses):
+            row = table.rows[i + 1]
+
+            c0 = row.cells[0]
+            p0 = c0.paragraphs[0]
+            p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r0 = p0.add_run(str(i + 1))
+            r0.font.size = Pt(10)
+
+            c1 = row.cells[1]
+            pt = c1.paragraphs[0]
+            rt = pt.add_run(expense.get("name", ""))
+            rt.bold = True
+            rt.font.size = Pt(10)
+            description = expense.get("description", "").strip()
+            if description:
+                dp = c1.add_paragraph()
+                dp.paragraph_format.space_before = Pt(0)
+                dp.paragraph_format.space_after = Pt(1)
+                dr = dp.add_run(description)
+                dr.font.size = Pt(9)
+
+            amount = float(expense.get("amount", 0) or 0)
+            expense_total += amount
+            c2 = row.cells[2]
+            p2 = c2.paragraphs[0]
+            p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r2 = p2.add_run(f"{sym}{amount:,.2f}")
+            r2.font.size = Pt(10)
+            r2.bold = True
+
+        def _total_row(label, value, value_size=Pt(11)):
+            trow = table.add_row()
+            trow.cells[0].merge(trow.cells[1])
+            lp = trow.cells[0].paragraphs[0]
+            lp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            lr = lp.add_run(label)
+            lr.bold = True
+            lr.font.size = Pt(10)
+            vp = trow.cells[2].paragraphs[0]
+            vp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            vr = vp.add_run(value)
+            vr.bold = True
+            vr.font.size = value_size
+
+        if work_total > 0:
+            _total_row("Charges Subtotal: ", f"{sym}{expense_total:,.2f}", Pt(10))
+            _total_row("Grand Total: ", f"{sym}{work_total + expense_total:,.2f}", Pt(12))
+        else:
+            _total_row("Total Amount: ", f"{sym}{expense_total:,.2f}", Pt(12))
+
+        doc.add_paragraph().paragraph_format.space_after = Pt(4)
+        return expense_total
 
     def _add_amount_in_words(
         self,
@@ -736,11 +862,19 @@ Commits:
 
     def get_usage_stats(self) -> Dict[str, Any]:
         """Return token usage statistics."""
+        input_cost_per_million = getattr(
+            app_config, "LLM_INPUT_COST_PER_MILLION",
+            app_config.CLAUDE_INPUT_COST_PER_MILLION,
+        )
+        output_cost_per_million = getattr(
+            app_config, "LLM_OUTPUT_COST_PER_MILLION",
+            app_config.CLAUDE_OUTPUT_COST_PER_MILLION,
+        )
         estimated_cost = (
             (self.total_input_tokens / 1_000_000)
-            * app_config.CLAUDE_INPUT_COST_PER_MILLION
+            * input_cost_per_million
             + (self.total_output_tokens / 1_000_000)
-            * app_config.CLAUDE_OUTPUT_COST_PER_MILLION
+            * output_cost_per_million
         )
         return {
             "input_tokens": self.total_input_tokens,

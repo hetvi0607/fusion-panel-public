@@ -59,3 +59,7 @@ token.json
 
 # Thumbnails
 ._*
+data/reports/july-2026/all_commits.csv
+data/reports/july-2026/example-org-sample-android/jetpack-compose/commits.csv
+data/reports/june-2026/all_commits.csv
+data/reports/june-2026/rutvik106-Time-Tracker/rutvik-test/commits.csv

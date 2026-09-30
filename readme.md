@@ -5,7 +5,7 @@ An automated system for collecting, analyzing, and reporting GitHub commits acro
 ## Features
 
 ✨ **Automated Data Collection** - Fetch commits from multiple GitHub repositories  
-🤖 **AI-Powered Analysis** - Claude AI generates human-readable summaries  
+🤖 **AI-Powered Analysis** - Claude or any OpenAI-compatible LLM generates human-readable summaries  
 📊 **Report Generation** - Creates detailed CSV reports and AI summaries  
 💬 **WhatsApp Integration** - Send reports to WhatsApp Business groups  
 📧 **Email Notifications** - Automated email delivery (optional)  
@@ -18,7 +18,7 @@ An automated system for collecting, analyzing, and reporting GitHub commits acro
 
 - Python 3.8+
 - GitHub Personal Access Token
-- Claude API key (Anthropic)
+- LLM API key (Anthropic Claude, OpenAI, Groq, Cerebras, OpenRouter, etc.)
 
 ### Installation
 
@@ -126,7 +126,13 @@ never rendered back to the browser.
 # GitHub API
 GITHUB_TOKEN=your_github_token_here
 
-# Claude API
+# LLM / AI API (Anthropic Claude, OpenAI, Groq, Cerebras, OpenRouter, etc.)
+LLM_PROVIDER=anthropic          # or openai
+LLM_API_KEY=your_api_key
+LLM_MODEL=claude-3-5-sonnet-20241022
+LLM_BASE_URL=                   # optional, e.g. https://api.groq.com/openai/v1
+
+# Legacy Claude-specific keys (still supported as fallback)
 CLAUDE_API_KEY=your_claude_api_key
 CLAUDE_MODEL=claude-3-5-sonnet-20241022
 
@@ -159,7 +165,7 @@ LOG_LEVEL=INFO
 ```
 
 See `.env.example` for all startup options. The web settings page controls the
-GitHub and Claude credentials, Claude model, AI guardrails, concurrent
+GitHub and LLM credentials, provider, model, AI guardrails, concurrent
 repository fetching, AI batch size, logging level, reusable clients, tracked
 repositories, and company/provider details used in generated contracts.
 
@@ -211,7 +217,7 @@ python3 scripts/verify_repo_access.py owner/repo-name
 
 ## AI Analysis
 
-The system uses Claude AI to analyze commit diffs and generate:
+The system uses a configurable LLM (Claude, OpenAI, Groq, Cerebras, OpenRouter, or any OpenAI-compatible endpoint) to analyze commit diffs and generate:
 
 - **Human-readable summaries** - Plain language explanations of technical changes
 - **Change categorization** - Automatic classification (Feature, Bug Fix, Refactor, etc.)
@@ -246,7 +252,7 @@ Reports are saved in `data/reports/` directory.
 The web interface also provides an **AMC** section. Configure reusable business
 defaults once, select a saved client, add one or more maintained websites,
 applications, products, or infrastructure items, enter the effective date and
-annual fee, then review or revise Claude's structured draft before exporting an
+annual fee, then review or revise the AI-structured draft before exporting an
 unsigned DOCX contract.
 
 ## Troubleshooting
@@ -262,7 +268,7 @@ unsigned DOCX contract.
 **Authentication Failures**
 ```bash
 # Verify API keys in .env file
-# Check token permissions on GitHub/Claude
+# Check token permissions on GitHub and LLM provider
 ```
 
 **Database Issues**

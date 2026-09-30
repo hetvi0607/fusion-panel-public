@@ -2,10 +2,10 @@
 import os
 import time
 import logging
-import anthropic
 from typing import Dict, List, Any, Tuple
 
 from src.core.config import app_config
+from src.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -30,26 +30,15 @@ class SimpleAiAnalyzer:
             self.client = None
             self.use_new_api = False
         else:
-            self.api_key = api_key or app_config.CLAUDE_API_KEY
+            self.api_key = api_key or app_config.LLM_API_KEY or app_config.CLAUDE_API_KEY
             if not self.api_key:
-                raise ValueError("Claude API key is required when not using mock mode")
-            
-            # Create the client based on the library version
-            try:
-                # Try the newer way first
-                self.client = anthropic.Anthropic(api_key=self.api_key)
-                self.use_new_api = True
-                logger.info("Using newer Anthropic API (v0.54.0+)")
-            except Exception as e:
-                # Fall back to older version if needed
-                try:
-                    self.client = anthropic.Client(api_key=self.api_key)
-                    self.use_new_api = False
-                    logger.info("Using older Anthropic API")
-                except Exception as e:
-                    raise ValueError(f"Failed to initialize Anthropic client: {str(e)}")
-                    
-        self.model = app_config.CLAUDE_MODEL
+                raise ValueError("LLM API key is required when not using mock mode")
+
+            self.client = LLMClient(api_key=self.api_key)
+            self.use_new_api = True
+            logger.info("Using unified LLM client")
+
+        self.model = app_config.LLM_MODEL or app_config.CLAUDE_MODEL
         logger.info(f"AI analyzer initialized with model {self.model}")
         
     def _generate_mock_response(self, commit_data, diff_content):

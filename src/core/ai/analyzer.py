@@ -6,9 +6,8 @@ import time
 import re
 from typing import Dict, List, Tuple, Any, Optional
 
-import anthropic
-
 from src.core.config import app_config
+from src.core.llm_client import LLMClient
 
 # Configure logger
 logging.basicConfig(
@@ -32,26 +31,16 @@ class AiAnalyzer:
     
     def __init__(self, api_key: str = None):
         """Initialize the AI analyzer.
-        
+
         Args:
-            api_key: Claude API key. If None, uses the key from config.
+            api_key: LLM API key. If None, uses the key from config.
         """
-        self.api_key = api_key or app_config.CLAUDE_API_KEY
+        self.api_key = api_key or app_config.LLM_API_KEY or app_config.CLAUDE_API_KEY
         if not self.api_key:
-            raise ValueError("Claude API key is required")
-        
-        # Create the client based on the library version
-        try:
-            # Try the newer way first
-            self.client = anthropic.Anthropic(api_key=self.api_key)
-        except TypeError:
-            # Fall back to older version if needed
-            try:
-                self.client = anthropic.Client(api_key=self.api_key)
-            except Exception as e:
-                raise ValueError(f"Failed to initialize Anthropic client: {str(e)}")
-                
-        self.model = app_config.CLAUDE_MODEL
+            raise ValueError("LLM API key is required")
+
+        self.client = LLMClient(api_key=self.api_key)
+        self.model = app_config.LLM_MODEL or app_config.CLAUDE_MODEL
         self.max_tokens = app_config.AI_MAX_TOKENS
         self.request_count = 0
         self.token_usage = {"input": 0, "output": 0}
@@ -99,10 +88,17 @@ class AiAnalyzer:
             self.token_usage["input"] += input_tokens
             self.token_usage["output"] += output_tokens
             
-            # Estimate costs (simplified, actual costs may vary)
-            # Claude Sonnet pricing as of implementation: $3 per million input tokens, $15 per million output tokens
-            input_cost = input_tokens * (3 / 1000000)
-            output_cost = output_tokens * (15 / 1000000)
+            # Estimate costs using configured per-million pricing.
+            input_cost_per_million = getattr(
+                app_config, "LLM_INPUT_COST_PER_MILLION",
+                app_config.CLAUDE_INPUT_COST_PER_MILLION,
+            )
+            output_cost_per_million = getattr(
+                app_config, "LLM_OUTPUT_COST_PER_MILLION",
+                app_config.CLAUDE_OUTPUT_COST_PER_MILLION,
+            )
+            input_cost = input_tokens * (input_cost_per_million / 1_000_000)
+            output_cost = output_tokens * (output_cost_per_million / 1_000_000)
             
             # Initialize estimated_cost if needed
             if not hasattr(self, 'estimated_cost') or self.estimated_cost is None:
@@ -225,108 +221,45 @@ CHANGE_TYPE: [Single category from the list]
             
             logger.debug(f"Processing commit {commit_data['sha'][:7]} with prompt length {len(prompt)}")
             response_text = ""
-            
-            # Try new API format first (v0.54.0+)
-            try:
-                logger.debug("Attempting to use new Anthropic API format (messages.create)")
-                try:
-                    response = self.client.messages.create(
-                        model=self.model,
-                        max_tokens=min(1000, app_config.AI_MAX_TOKENS),
-                        system=system_prompt,
-                        messages=[{"role": "user", "content": prompt}]
-                    )
-                    
-                    # Extract response text based on response structure
-                    if hasattr(response, 'content') and isinstance(response.content, list):
-                        try:
-                            response_text = response.content[0].text
-                        except (AttributeError, IndexError, TypeError):
-                            # Try different access patterns
-                            try:
-                                response_text = response.content[0]['text']
-                            except (KeyError, IndexError, TypeError):
-                                response_text = str(response.content)
-                    else:
-                        # Try direct access as string/dict
-                        response_text = str(getattr(response, 'content', response))
-                    
-                    # Track token usage safely
-                    try:
-                        if hasattr(response, 'usage'):
-                            input_tokens = getattr(response.usage, 'input_tokens', 0)
-                            output_tokens = getattr(response.usage, 'output_tokens', 0)
-                        else:
-                            # Rough estimation
-                            input_tokens = len(prompt) // 4
-                            output_tokens = len(response_text) // 4
-                        
-                        budget_ok = self._track_token_usage(input_tokens, output_tokens)
-                        if not budget_ok:
-                            commit_data["ai_summary"] = "AI analysis budget limit reached"
-                            commit_data["change_type"] = "Other"
-                            return commit_data
-                    except Exception as e:
-                        logger.warning(f"Failed to track token usage: {str(e)}")
-                except Exception as e:
-                    logger.warning(f"Error with new API format: {str(e)}")
-                    raise e
-                
-            # Fall back to old API format (pre-0.54.0)
-            except Exception as e:
-                logger.debug(f"New API failed: {str(e)}. Falling back to old API format")
-                try:
-                    response = self.client.completion(
-                        prompt=f"\n\nHuman: {prompt}\n\nAssistant:",
-                        model=self.model,
-                        max_tokens_to_sample=min(
-                            1000,
-                            app_config.AI_MAX_TOKENS,
-                        ),
-                    )
-                    
-                    # Extract response text - old format is simpler
-                    response_text = getattr(response, 'completion', str(response))
-                    
-                    # Track token usage
-                    input_tokens = len(prompt) // 4  # Rough estimation
-                    output_tokens = len(response_text) // 4  # Rough estimation
-                    budget_ok = self._track_token_usage(input_tokens, output_tokens)
-                    
-                    if not budget_ok:
-                        commit_data["ai_summary"] = "AI analysis budget limit reached"
-                        commit_data["change_type"] = "Other"
-                        return commit_data
-                except Exception as nested_e:
-                    logger.error(f"Both API formats failed. New API error: {str(e)}, Old API error: {str(nested_e)}")
-                    raise nested_e
-            
-            # Ensure we have response text
-            if not response_text:
-                raise ValueError("Failed to extract response text from API response")
-                
+
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=min(1000, app_config.AI_MAX_TOKENS),
+                system=system_prompt,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            response_text = response.content[0].text
+
+            input_tokens = getattr(response.usage, "input_tokens", 0)
+            output_tokens = getattr(response.usage, "output_tokens", 0)
+            budget_ok = self._track_token_usage(input_tokens, output_tokens)
+            if not budget_ok:
+                commit_data["ai_summary"] = "AI analysis budget limit reached"
+                commit_data["change_type"] = "Other"
+                return commit_data
+
             logger.debug(f"Received response of length {len(response_text)}")
-            
+
             # Parse response
             summary, change_type = self._parse_response(response_text)
-            
+
             # Update rate limit stats
             self.request_count += 1
             self.requests_in_window += 1
-            
+
             # Update commit data
             commit_data["ai_summary"] = summary
             commit_data["change_type"] = change_type
-            
+
             logger.info(f"Successfully analyzed commit {commit_data['sha'][:7]}")
-            
+
         except Exception as e:
             logger.error(f"Error analyzing commit {commit_data['sha'][:7]}: {str(e)}")
             commit_data["ai_summary"] = f"Analysis failed: {str(e)[:100]}"
             commit_data["change_type"] = "Other"
-        
+
         return commit_data
-    
+
     def get_usage_stats(self) -> Dict[str, Any]:
         """Get usage statistics.
         

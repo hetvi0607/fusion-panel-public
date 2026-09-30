@@ -15,7 +15,9 @@ class Config:
     # GitHub API credentials
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
     
-    # Claude API credentials
+    # LLM / AI credentials
+    # Legacy "Claude" names are kept for backward compatibility; new generic
+    # settings take precedence when both are present.
     CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
     CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
     CLAUDE_INPUT_COST_PER_MILLION = float(
@@ -23,6 +25,19 @@ class Config:
     )
     CLAUDE_OUTPUT_COST_PER_MILLION = float(
         os.getenv("CLAUDE_OUTPUT_COST_PER_MILLION", 15.0)
+    )
+
+    # Generic LLM provider settings (supports Anthropic native and any
+    # OpenAI-compatible endpoint such as Groq, Cerebras, OpenRouter, etc.)
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()
+    LLM_API_KEY = os.getenv("LLM_API_KEY", CLAUDE_API_KEY)
+    LLM_BASE_URL = os.getenv("LLM_BASE_URL", "")
+    LLM_MODEL = os.getenv("LLM_MODEL", CLAUDE_MODEL)
+    LLM_INPUT_COST_PER_MILLION = float(
+        os.getenv("LLM_INPUT_COST_PER_MILLION", CLAUDE_INPUT_COST_PER_MILLION)
+    )
+    LLM_OUTPUT_COST_PER_MILLION = float(
+        os.getenv("LLM_OUTPUT_COST_PER_MILLION", CLAUDE_OUTPUT_COST_PER_MILLION)
     )
     
     # Google Sheets API credentials (optional)
@@ -99,7 +114,10 @@ class Config:
     DASHBOARD_ACTIVITY_CACHE_MINUTES = int(
         os.getenv("DASHBOARD_ACTIVITY_CACHE_MINUTES", 5)
     )  # How long the "active repos/users" GitHub activity snapshot stays cached
-    
+
+    # Invoice settings
+    HOURS_MULTIPLIER = float(os.getenv("HOURS_MULTIPLIER", "0.8"))
+
     # Retry settings
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", 3))
     RETRY_DELAY = int(os.getenv("RETRY_DELAY", 5))  # In seconds

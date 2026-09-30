@@ -5,15 +5,14 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-import anthropic
-
 from src.core.config import app_config
+from src.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
 
 
 class ClaudeService:
-    """Small, reusable wrapper around the Anthropic Messages API."""
+    """Small, reusable wrapper around the configured LLM provider."""
 
     def __init__(
         self,
@@ -21,12 +20,15 @@ class ClaudeService:
         model: Optional[str] = None,
         client: Any = None,
     ):
-        self.api_key = api_key or app_config.CLAUDE_API_KEY
+        self.api_key = api_key or app_config.LLM_API_KEY or app_config.CLAUDE_API_KEY
         if client is None and not self.api_key:
-            raise ValueError("Claude API key is required. Set CLAUDE_API_KEY in .env.")
+            raise ValueError(
+                "LLM API key is required. Set it in Settings or via "
+                "LLM_API_KEY / CLAUDE_API_KEY in the environment."
+            )
 
-        self.client = client or anthropic.Anthropic(api_key=self.api_key)
-        self.model = model or app_config.CLAUDE_MODEL
+        self.client = client or LLMClient(api_key=self.api_key, model=model)
+        self.model = model or app_config.LLM_MODEL or app_config.CLAUDE_MODEL
         self.total_input_tokens = 0
         self.total_output_tokens = 0
 
@@ -65,7 +67,7 @@ class ClaudeService:
                 if attempt < attempts:
                     time.sleep(attempt)
 
-        raise RuntimeError(f"Claude could not return valid structured content: {last_error}")
+        raise RuntimeError(f"LLM could not return valid structured content: {last_error}")
 
     def _track_usage(self, message: Any) -> None:
         usage = getattr(message, "usage", None)
@@ -76,14 +78,14 @@ class ClaudeService:
     def _extract_text(message: Any) -> str:
         content = getattr(message, "content", None)
         if not content:
-            raise ValueError("Claude returned no content")
+            raise ValueError("LLM returned no content")
 
         first = content[0]
         text = getattr(first, "text", None)
         if text is None and isinstance(first, dict):
             text = first.get("text")
         if not text:
-            raise ValueError("Claude returned no text content")
+            raise ValueError("LLM returned no text content")
         return str(text).strip()
 
     @staticmethod
@@ -105,15 +107,23 @@ class ClaudeService:
             return obj
 
     def get_usage_stats(self) -> Dict[str, Any]:
+        input_cost_per_million = getattr(
+            app_config, "LLM_INPUT_COST_PER_MILLION",
+            app_config.CLAUDE_INPUT_COST_PER_MILLION,
+        )
+        output_cost_per_million = getattr(
+            app_config, "LLM_OUTPUT_COST_PER_MILLION",
+            app_config.CLAUDE_OUTPUT_COST_PER_MILLION,
+        )
         input_cost = (
             self.total_input_tokens
             / 1_000_000
-            * app_config.CLAUDE_INPUT_COST_PER_MILLION
+            * input_cost_per_million
         )
         output_cost = (
             self.total_output_tokens
             / 1_000_000
-            * app_config.CLAUDE_OUTPUT_COST_PER_MILLION
+            * output_cost_per_million
         )
         return {
             "input_tokens": self.total_input_tokens,

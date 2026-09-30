@@ -354,6 +354,10 @@ def _finalize_document(directory, filename):
 
 RUNTIME_SETTING_KEYS = (
     "GITHUB_TOKEN",
+    "LLM_PROVIDER",
+    "LLM_API_KEY",
+    "LLM_BASE_URL",
+    "LLM_MODEL",
     "CLAUDE_API_KEY",
     "CLAUDE_MODEL",
     "AI_ENABLED",
@@ -364,6 +368,7 @@ RUNTIME_SETTING_KEYS = (
     "BATCH_SIZE",
     "LOG_LEVEL",
     "DASHBOARD_ACTIVITY_CACHE_MINUTES",
+    "HOURS_MULTIPLIER",
 )
 
 
@@ -379,6 +384,16 @@ def _apply_runtime_settings(settings):
     for key in RUNTIME_SETTING_KEYS:
         if key in settings:
             setattr(app_config, key, settings[key])
+    # Backward compatibility: inherit generic LLM settings from legacy
+    # Claude-only keys if the generic ones are missing.
+    if not getattr(app_config, "LLM_API_KEY", "") and settings.get("CLAUDE_API_KEY"):
+        app_config.LLM_API_KEY = settings["CLAUDE_API_KEY"]
+    if not getattr(app_config, "LLM_MODEL", "") and settings.get("CLAUDE_MODEL"):
+        app_config.LLM_MODEL = settings["CLAUDE_MODEL"]
+    if not getattr(app_config, "LLM_PROVIDER", "") and settings.get(
+        "CLAUDE_API_KEY"
+    ):
+        app_config.LLM_PROVIDER = "anthropic"
     logging.getLogger().setLevel(
         getattr(logging, app_config.LOG_LEVEL, logging.INFO)
     )
@@ -409,8 +424,8 @@ def _ai_availability(db):
     """Return whether a new AI operation is allowed and a useful reason."""
     if not app_config.AI_ENABLED:
         return False, "AI is disabled in Settings."
-    if not app_config.CLAUDE_API_KEY:
-        return False, "Claude API key is not configured."
+    if not (app_config.LLM_API_KEY or app_config.CLAUDE_API_KEY):
+        return False, "LLM API key is not configured."
     usage = db.get_monthly_ai_usage()
     limit = float(app_config.AI_BUDGET_LIMIT or 0)
     if limit > 0 and float(usage["estimated_cost"]) >= limit:
@@ -868,7 +883,8 @@ def invoice_page():
                            repos=repos,
                            clients=clients,
                            default_start=default_start,
-                           default_end=default_end)
+                           default_end=default_end,
+                           hours_multiplier=app_config.HOURS_MULTIPLIER)
 
 
 def run_invoice_job(
@@ -883,12 +899,14 @@ def run_invoice_job(
     currency,
     invoice_type="development",
     service_items=None,
+    expenses=None,
 ):
     """Background worker that generates an invoice DOCX."""
     jobs[job_id]['status'] = 'running'
     jobs[job_id]['progress'] = 'Initializing...'
     try:
         service_items = service_items or []
+        expenses = expenses or []
         if invoice_type == "fixed":
             invoice_gen = InvoiceGenerator(enable_ai=False)
             work_details = service_items
@@ -1012,6 +1030,7 @@ def run_invoice_job(
             pricing_mode=(
                 "fixed" if invoice_type == "fixed" else "hourly"
             ),
+            expenses=expenses,
         )
 
         usage = invoice_gen.get_usage_stats()
@@ -1032,6 +1051,7 @@ def run_invoice_job(
             'invoice_path': output_path,
             'invoice_filename': filename,
             'categories': len(work_details),
+            'expense_count': len(expenses),
         }
         if invoice_type == "fixed":
             result.update({
@@ -1068,6 +1088,49 @@ def generate_invoice():
     selected_repos = []
     repo_labels = {}
     service_items = []
+
+    # Additional 3rd-party charges (pass-through costs like Vercel, AWS).
+    # These apply to both invoice types.
+    expenses = []
+    expense_names = request.form.getlist("expense_name[]")
+    expense_descriptions = request.form.getlist("expense_description[]")
+    expense_amounts = request.form.getlist("expense_amount[]")
+    for index, name in enumerate(expense_names):
+        name = name.strip()
+        description = (
+            expense_descriptions[index].strip()
+            if index < len(expense_descriptions)
+            else ""
+        )
+        raw_amount = (
+            expense_amounts[index].strip()
+            if index < len(expense_amounts)
+            else ""
+        )
+        if not name and not description and not raw_amount:
+            continue
+        if not name:
+            flash(f"Enter a service name for charge {index + 1}.", "error")
+            return redirect(url_for("invoice_page"))
+        try:
+            amount = float(raw_amount)
+        except (TypeError, ValueError):
+            flash(
+                f"Enter a valid amount for charge {index + 1} ({name}).",
+                "error",
+            )
+            return redirect(url_for("invoice_page"))
+        if not math.isfinite(amount) or amount <= 0:
+            flash(
+                f"Charge amount must be greater than zero for {name}.",
+                "error",
+            )
+            return redirect(url_for("invoice_page"))
+        expenses.append({
+            "name": name,
+            "description": description,
+            "amount": amount,
+        })
 
     if invoice_type == "development":
         selected_repo_ids = request.form.getlist("repos")
@@ -1152,6 +1215,27 @@ def generate_invoice():
     if currency not in ("INR", "USD"):
         currency = "INR"
 
+    # Hours multiplier lives on this page now; persist changes so the next
+    # invoice defaults to the last-used value.
+    try:
+        hours_multiplier = float(
+            request.form.get("hours_multiplier", "").strip()
+        )
+    except ValueError:
+        hours_multiplier = app_config.HOURS_MULTIPLIER
+    if not 0.1 <= hours_multiplier <= 2.0:
+        flash("Hours multiplier must be between 0.1 and 2.0.", "error")
+        return redirect(url_for("invoice_page"))
+    if hours_multiplier != app_config.HOURS_MULTIPLIER:
+        app_config.HOURS_MULTIPLIER = hours_multiplier
+        try:
+            db = get_db()
+            stored = db.get_runtime_settings(_runtime_setting_defaults())
+            stored["HOURS_MULTIPLIER"] = hours_multiplier
+            db.save_runtime_settings(stored)
+        except Exception as exc:
+            logger.warning("Could not persist hours multiplier: %s", exc)
+
     # Billing info
     bill_to = {
         "name": request.form.get("bill_to_name", "").strip(),
@@ -1181,7 +1265,7 @@ def generate_invoice():
         target=run_invoice_job,
         args=(job_id, start_date, end_date, selected_repos, repo_labels,
               bill_to, invoice_meta, per_hour_rate, currency,
-              invoice_type, service_items),
+              invoice_type, service_items, expenses),
         daemon=True,
     )
     thread.start()
@@ -1431,7 +1515,7 @@ def _queue_amc_job(db, client_id, input_data):
     contract_id = db.create_amc_contract(
         client_id=client_id,
         input_data=input_data,
-        model=app_config.CLAUDE_MODEL,
+        model=app_config.LLM_MODEL or app_config.CLAUDE_MODEL,
         prompt_version=PROMPT_VERSION,
     )
     facts = input_data["facts"]
@@ -2148,9 +2232,15 @@ def settings_page():
 
     if request.method == "POST":
         try:
-            model = request.form.get("claude_model", "").strip()
+            provider = request.form.get("llm_provider", "anthropic").strip().lower()
+            if provider not in {"anthropic", "openai"}:
+                raise ValueError("Select a valid LLM provider.")
+
+            model = request.form.get("llm_model", "").strip()
             if not model:
-                raise ValueError("Claude model is required.")
+                model = request.form.get("claude_model", "").strip()
+            if not model:
+                raise ValueError("LLM model is required.")
 
             budget_limit = float(
                 request.form.get("ai_budget_limit", "").strip()
@@ -2184,8 +2274,17 @@ def settings_page():
                     "Dashboard activity cache must be between 1 and 1,440 minutes (24 hours)."
                 )
 
+            llm_key = request.form.get("llm_api_key", "").strip()
+            if not llm_key:
+                llm_key = request.form.get("claude_api_key", "").strip()
+            llm_base_url = request.form.get("llm_base_url", "").strip()
+
             values = {
                 "GITHUB_TOKEN": current.get("GITHUB_TOKEN", ""),
+                "LLM_PROVIDER": provider,
+                "LLM_API_KEY": current.get("LLM_API_KEY", ""),
+                "LLM_BASE_URL": llm_base_url,
+                "LLM_MODEL": model,
                 "CLAUDE_API_KEY": current.get("CLAUDE_API_KEY", ""),
                 "CLAUDE_MODEL": model,
                 "AI_ENABLED": request.form.get("ai_enabled") == "on",
@@ -2198,13 +2297,16 @@ def settings_page():
                 "BATCH_SIZE": batch_size,
                 "LOG_LEVEL": log_level,
                 "DASHBOARD_ACTIVITY_CACHE_MINUTES": dashboard_cache_minutes,
+                "HOURS_MULTIPLIER": current.get(
+                    "HOURS_MULTIPLIER", app_config.HOURS_MULTIPLIER
+                ),
             }
             github_token = request.form.get("github_token", "").strip()
-            claude_key = request.form.get("claude_api_key", "").strip()
             if github_token:
                 values["GITHUB_TOKEN"] = github_token
-            if claude_key:
-                values["CLAUDE_API_KEY"] = claude_key
+            if llm_key:
+                values["LLM_API_KEY"] = llm_key
+                values["CLAUDE_API_KEY"] = llm_key
 
             db.save_runtime_settings(values)
             _apply_runtime_settings(values)
@@ -2218,14 +2320,21 @@ def settings_page():
 
     current = db.get_runtime_settings(_runtime_setting_defaults())
     usage = db.get_monthly_ai_usage()
+
+    active_key = current.get("LLM_API_KEY") or current.get("CLAUDE_API_KEY")
+    active_model = current.get("LLM_MODEL") or current.get("CLAUDE_MODEL")
+
     settings = {
         **current,
+        "LLM_PROVIDER": current.get("LLM_PROVIDER", "anthropic"),
+        "LLM_BASE_URL": current.get("LLM_BASE_URL", ""),
+        "LLM_MODEL": active_model,
+        "LLM_API_KEY_MASKED": _masked_secret(active_key),
+        "CLAUDE_API_KEY_MASKED": _masked_secret(current.get("CLAUDE_API_KEY")),
         "GITHUB_TOKEN_MASKED": _masked_secret(current.get("GITHUB_TOKEN")),
-        "CLAUDE_API_KEY_MASKED": _masked_secret(
-            current.get("CLAUDE_API_KEY")
-        ),
-        "GITHUB_TOKEN_SET": bool(current.get("GITHUB_TOKEN")),
+        "LLM_API_KEY_SET": bool(active_key),
         "CLAUDE_API_KEY_SET": bool(current.get("CLAUDE_API_KEY")),
+        "GITHUB_TOKEN_SET": bool(current.get("GITHUB_TOKEN")),
         "MONTHLY_AI_USAGE": usage,
     }
     return render_template("settings.html", settings=settings)
