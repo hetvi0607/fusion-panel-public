@@ -17,6 +17,7 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn, nsdecls
 from docx.oxml import parse_xml
 from src.core.config import app_config
+from src.core.invoice_layout import normalize_invoice_layout
 from src.core.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -384,6 +385,7 @@ Commits:
 
         # Save
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        normalize_invoice_layout(doc)
         doc.save(output_path)
         logger.info(f"Invoice saved to {output_path}")
         return output_path
@@ -542,31 +544,8 @@ Commits:
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         self._set_table_borders(table)
 
-        # Column widths
-        # for row in table.rows:
-        #     row.cells[0].width = Inches(0.7)
-        #     row.cells[1].width = Inches(5.0)
-        #     row.cells[2].width = Inches(0.8)
-
-        # Column widths — disable auto-fit and force widths via XML
-        tbl = table._tbl
-        tblPr = tbl.tblPr
-        tblPr.append(parse_xml(
-            f'<w:tblLayout {nsdecls("w")} w:type="fixed"/>'
-        ))
-        col_widths = (
-            [Inches(0.6), Inches(4.6), Inches(1.3)]
-            if is_fixed
-            else [Inches(0.4), Inches(5.5), Inches(0.6)]
-        )
-        for row in table.rows:
-            for i, width in enumerate(col_widths):
-                tc = row.cells[i]._tc
-                tcPr = tc.get_or_add_tcPr()
-                tcW = parse_xml(
-                    f'<w:tcW {nsdecls("w")} w:w="{int(width.emu / 635)}" w:type="dxa"/>'
-                )
-                tcPr.append(tcW)
+        # Widths, padding and spacing are applied to the complete table by
+        # normalize_invoice_layout, including the totals rows added below.
 
         # Header row
         hdr = table.rows[0]

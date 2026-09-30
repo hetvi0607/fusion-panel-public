@@ -24,6 +24,8 @@
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Company / Name</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Address</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">GSTIN</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">PO Number</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Per Hour Rate</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Repositories</th>
                 <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
@@ -47,6 +49,20 @@
                 <td class="px-6 py-4">
                     {% if client.gstin %}
                     <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700">{{ client.gstin }}</span>
+                    {% else %}
+                    <span class="text-xs text-gray-400">—</span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4">
+                    {% if client.po_number %}
+                    <span class="text-sm font-mono text-gray-700">{{ client.po_number }}</span>
+                    {% else %}
+                    <span class="text-xs text-gray-400">—</span>
+                    {% endif %}
+                </td>
+                <td class="px-6 py-4">
+                    {% if client.per_hour_rate %}
+                    <span class="text-sm font-mono text-gray-700">{{ client.per_hour_rate }}</span>
                     {% else %}
                     <span class="text-xs text-gray-400">—</span>
                     {% endif %}
@@ -77,7 +93,7 @@
                                 class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                             <i class="fa-solid fa-code-branch text-[10px] mr-1"></i> Repos
                         </button>
-                        <button onclick='openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }}, {{ client.contact_person|tojson }}, {{ client.email|tojson }}, {{ client.phone|tojson }}, {{ client.website|tojson }}, {{ client.signatory_name|tojson }}, {{ client.signatory_title|tojson }})'
+                        <button onclick='openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }}, {{ client.contact_person|tojson }}, {{ client.email|tojson }}, {{ client.phone|tojson }}, {{ client.website|tojson }}, {{ client.signatory_name|tojson }}, {{ client.signatory_title|tojson }}, {{ client.po_number|tojson }}, {{ client.per_hour_rate|tojson }})'
                                 class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                             <i class="fa-solid fa-pen text-[10px] mr-1"></i> Edit
                         </button>
@@ -136,6 +152,16 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1">GSTIN <span class="text-gray-400 font-normal">(optional)</span></label>
                     <input type="text" name="gstin" placeholder="e.g. 27AAPFU0939F1ZV"
                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">PO Number <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="text" name="po_number" placeholder="e.g. PO-2026-001"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Per Hour Rate</label>
+                    <input type="number" name="per_hour_rate" min="0" step="any" placeholder="e.g. 2000"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Contact <span class="text-gray-400 font-normal">(optional)</span></label>
@@ -213,6 +239,16 @@
                     <label class="block text-sm font-medium text-gray-700 mb-1">GSTIN <span class="text-gray-400 font-normal">(optional)</span></label>
                     <input type="text" name="gstin" id="edit-gstin"
                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">PO Number <span class="text-gray-400 font-normal">(optional)</span></label>
+                    <input type="text" name="po_number" id="edit-po-number"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border font-mono">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Per Hour Rate</label>
+                    <input type="number" name="per_hour_rate" id="edit-per-hour-rate" min="0" step="any"
+                           class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Contact <span class="text-gray-400 font-normal">(optional)</span></label>
@@ -350,7 +386,7 @@ function toggleAllRepos(checked) {
     });
 }
 
-function openEditModal(id, name, addr1, addr2, gstin, contact, contactPerson, email, phone, website, signatoryName, signatoryTitle) {
+function openEditModal(id, name, addr1, addr2, gstin, contact, contactPerson, email, phone, website, signatoryName, signatoryTitle, poNumber, perHourRate) {
     document.getElementById('edit-client-id').value = id;
     document.getElementById('edit-name').value = name;
     document.getElementById('edit-addr1').value = addr1;
@@ -363,6 +399,8 @@ function openEditModal(id, name, addr1, addr2, gstin, contact, contactPerson, em
     document.getElementById('edit-website').value = website;
     document.getElementById('edit-signatory-name').value = signatoryName;
     document.getElementById('edit-signatory-title').value = signatoryTitle;
+    document.getElementById('edit-po-number').value = poNumber;
+    document.getElementById('edit-per-hour-rate').value = perHourRate;
     document.getElementById('edit-modal').classList.remove('hidden');
 }
 </script>

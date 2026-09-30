@@ -179,6 +179,90 @@ class SettingsTests(unittest.TestCase):
                 self.assertNotIn('href="/repos"', top_nav)
                 self.assertNotIn('href="/clients"', top_nav)
 
+    def test_repository_edit_updates_name_branch_and_client_mapping(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = RepositoryDB(os.path.join(temp_dir, "repositories.db"))
+            db.add_repository("old-owner/project", "main")
+            db.add_repository("old-owner/project", "release")
+            client_id = db.add_client("Example Client")
+            db.assign_repository_to_client("old-owner/project", client_id)
+            with (
+                patch.object(app_module, "get_db", return_value=db),
+                patch.dict(app_module.app.before_request_funcs, {None: []}),
+                app_module.app.test_client() as client,
+            ):
+                response = client.post(
+                    "/settings/repositories/update",
+                    data={
+                        "original_repo_name": "old-owner/project",
+                        "original_branch": "main",
+                        "repo_name": "new-owner/project",
+                        "branch": "develop",
+                        "ai_enabled": "on",
+                    },
+                )
+
+            self.assertEqual(response.status_code, 302)
+            repos = db.get_repositories(enabled_only=False)
+            repo_by_name = {repo["repo"]: repo for repo in repos}
+            self.assertEqual(set(repo_by_name), {
+                "new-owner/project",
+                "old-owner/project",
+            })
+            self.assertEqual(repo_by_name["new-owner/project"]["branch"], "develop")
+            self.assertFalse(repo_by_name["new-owner/project"]["enabled"])
+            self.assertTrue(repo_by_name["new-owner/project"]["ai_enabled"])
+            self.assertEqual(repo_by_name["new-owner/project"]["client_id"], client_id)
+            self.assertEqual(repo_by_name["old-owner/project"]["branch"], "release")
+            self.assertEqual(repo_by_name["old-owner/project"]["client_id"], client_id)
+
+    def test_client_po_number_can_be_created_and_updated(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db = RepositoryDB(os.path.join(temp_dir, "clients.db"))
+            with (
+                patch.object(app_module, "get_db", return_value=db),
+                patch.dict(app_module.app.before_request_funcs, {None: []}),
+                app_module.app.test_client() as client,
+            ):
+                response = client.post(
+                    "/settings/clients/add",
+                    data={
+                        "name": "Example Client",
+                        "po_number": "PO-1001",
+                        "per_hour_rate": "1250.50",
+                    },
+                )
+                self.assertEqual(response.status_code, 302)
+                stored_client = db.get_clients()[0]
+                self.assertEqual(stored_client["po_number"], "PO-1001")
+                self.assertEqual(stored_client["per_hour_rate"], 1250.5)
+
+                response = client.post(
+                    "/settings/clients/update",
+                    data={
+                        "client_id": stored_client["id"],
+                        "name": "Example Client",
+                        "po_number": "PO-1002",
+                        "per_hour_rate": "1500",
+                    },
+                )
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(db.get_client(stored_client["id"])["po_number"], "PO-1002")
+                self.assertEqual(db.get_client(stored_client["id"])["per_hour_rate"], 1500)
+
+                page = client.get("/settings/clients")
+                self.assertIn(b"PO Number", page.data)
+                self.assertIn(b"PO-1002", page.data)
+                self.assertIn(b"Per Hour Rate", page.data)
+                self.assertIn(b"1500.0", page.data)
+
+                invoice_page = client.get("/invoice")
+                self.assertEqual(invoice_page.status_code, 200)
+                self.assertIn(b'data-po-number="PO-1002"', invoice_page.data)
+                self.assertIn(b'data-per-hour-rate="1500.0"', invoice_page.data)
+                self.assertIn(b'id="po_number_field"', invoice_page.data)
+                self.assertIn(b'id="per_hour_rate_field"', invoice_page.data)
+
     def test_company_and_amc_settings_save_without_resetting_each_other(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             db = RepositoryDB(os.path.join(temp_dir, "settings.db"))

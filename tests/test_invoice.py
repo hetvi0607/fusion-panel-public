@@ -143,6 +143,49 @@ class InvoiceTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.location.endswith("/invoice"))
 
+    def test_development_invoice_fails_when_commit_fetch_fails(self):
+        job_id = "invoice-fetch-error"
+        app_module.jobs[job_id] = {
+            "status": "queued",
+            "progress": "Queued",
+            "log": [],
+        }
+
+        class FailedGitHubClient:
+            def fetch_commits(self, *args, **kwargs):
+                raise RuntimeError(
+                    "GitHub API error (403): API rate limit exceeded"
+                )
+
+        with (
+            patch.object(app_module, "get_db", return_value=object()),
+            patch.object(
+                app_module,
+                "GitHubClient",
+                return_value=FailedGitHubClient(),
+            ),
+            patch.object(
+                app_module,
+                "_ai_availability",
+                return_value=(False, "AI disabled for test"),
+            ),
+        ):
+            app_module.run_invoice_job(
+                job_id=job_id,
+                start_date="2026-09-01",
+                end_date="2026-09-28",
+                selected_repos=[{"repo": "example/private", "branch": "main"}],
+                repo_labels={},
+                bill_to={},
+                invoice_meta={},
+                per_hour_rate=100,
+                currency="USD",
+            )
+
+        job = app_module.jobs[job_id]
+        self.assertEqual(job["status"], "error")
+        self.assertIn("API rate limit exceeded", job["progress"])
+
 
 if __name__ == "__main__":
     unittest.main()

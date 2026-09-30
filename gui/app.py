@@ -15,6 +15,8 @@ import threading
 import time
 import logging
 import math
+import tempfile
+from docx import Document
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import calendar
@@ -39,6 +41,7 @@ from src.core.github_client import GitHubClient
 from src.core.csv_reporter import CSVReporter
 from src.core.ai.csv_summarizer import AICsvSummarizer
 from src.core.invoice_generator import InvoiceGenerator
+from src.core.invoice_layout import normalize_invoice_layout
 from src.core.offer_letter_generator import OfferLetterGenerator
 from src.core.amc_ai_generator import AmcAiGenerator, PROMPT_VERSION, validate_amc_draft
 from src.core.amc_document_generator import AmcDocumentGenerator
@@ -86,19 +89,23 @@ _active_repos_state = {
 }
 
 
-def _compute_activity_snapshot(repo_names):
-    """Compute active repos and per-user commit activity over the last 30 days.
+def _compute_activity_snapshot(repo_configs):
+    """Compute recent activity on configured branches with bounded API use.
 
-    Flattens (repo, branch) pairs and fetches commit authorship with a large
-    thread pool so wall-clock time depends on network latency, not on the
-    number of repos/branches processed sequentially. A single pass of commit
-    data is reused both to determine which repos are "active" and to build
-    the per-user breakdown, avoiding a second round of API calls.
+    The dashboard samples at most 100 recent commits per configured branch;
+    shared commit ancestry is deduplicated before building user totals.
 
     Returns:
         Tuple of (active_repo_names: set[str], users: list[dict]) where each
         user dict is {"username": str, "total": int, "repos": [{"repo": str, "count": int}]}.
     """
+    repo_configs = list(repo_configs)
+    repo_names = sorted({config["repo"] for config in repo_configs if config.get("repo")})
+    pairs = sorted({
+        (config["repo"], config["branch"])
+        for config in repo_configs
+        if config.get("repo") and config.get("branch")
+    })
     if not repo_names:
         return set(), []
 
@@ -112,29 +119,19 @@ def _compute_activity_snapshot(repo_names):
     since_date = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
 
     try:
-        # Step 1: list branches for every repo in parallel.
-        branch_map = {}
-        with ThreadPoolExecutor(max_workers=min(len(repo_names), 20) or 1) as executor:
-            futures = {executor.submit(client.list_branches, r): r for r in repo_names}
-            for fut in as_completed(futures):
-                repo_name = futures[fut]
-                try:
-                    branch_map[repo_name] = fut.result() or []
-                except Exception as exc:
-                    logger.warning("Could not list branches for %s: %s", repo_name, exc)
-                    branch_map[repo_name] = []
-
-        # Step 2: fetch commit authorship for all (repo, branch) pairs in
-        # parallel. Branches share ancestry, so the same commit can show up
-        # under multiple branches for the same repo — dedupe by sha per repo.
-        pairs = [(r, b) for r, branches in branch_map.items() for b in branches]
+        # Read only configured branches and bound burst concurrency.
         repo_commits = {r: {} for r in repo_names}  # repo -> {sha: commit_info}
         repo_commits_lock = threading.Lock()
 
         def fetch_pair(pair):
             repo_name, branch = pair
             try:
-                commits = client.fetch_commit_authors_since(repo_name, branch, since_date)
+                commits = client.fetch_commit_authors_since(
+                    repo_name,
+                    branch,
+                    since_date,
+                    max_pages=1,
+                )
             except Exception as exc:
                 logger.warning("Commit fetch failed for %s@%s: %s", repo_name, branch, exc)
                 return
@@ -148,7 +145,7 @@ def _compute_activity_snapshot(repo_names):
                         bucket[sha] = c
 
         if pairs:
-            with ThreadPoolExecutor(max_workers=min(len(pairs), 30) or 1) as executor:
+            with ThreadPoolExecutor(max_workers=min(len(pairs), 5)) as executor:
                 list(executor.map(fetch_pair, pairs))
 
         # Step 3: aggregate into active repos + per-user/per-repo counts.
@@ -180,9 +177,15 @@ def _compute_activity_snapshot(repo_names):
         client.close()
 
 
-def _active_repos_worker(repo_names):
+def _active_repos_worker(repo_configs):
+    repo_configs = list(repo_configs)
+    repo_names = sorted({config["repo"] for config in repo_configs if config.get("repo")})
+    repo_key = frozenset(
+        (config.get("repo"), config.get("branch"))
+        for config in repo_configs
+    )
     try:
-        active, users = _compute_activity_snapshot(repo_names)
+        active, users = _compute_activity_snapshot(repo_configs)
         with _active_repos_lock:
             _active_repos_state.update({
                 "status": "ready",
@@ -191,7 +194,7 @@ def _active_repos_worker(repo_names):
                 "active_repos": sorted(active),
                 "users": users,
                 "computed_at": time.time(),
-                "repos_key": frozenset(repo_names),
+                "repos_key": repo_key,
             })
     except Exception as exc:
         logger.warning("Activity snapshot computation failed: %s", exc)
@@ -199,17 +202,20 @@ def _active_repos_worker(repo_names):
             _active_repos_state.update({
                 "status": "error",
                 "computed_at": time.time(),
-                "repos_key": frozenset(repo_names),
+                "repos_key": repo_key,
             })
 
 
-def _get_active_repos_state(repo_names):
+def _get_active_repos_state(repo_configs):
     """Return the current activity state, kicking off a background
     recompute if the cache is stale, missing, or the repo set changed.
     Never blocks on GitHub API calls.
     """
-    repo_names = list(repo_names)
-    key = frozenset(repo_names)
+    repo_configs = list(repo_configs)
+    key = frozenset(
+        (config.get("repo"), config.get("branch"))
+        for config in repo_configs
+    )
     now = time.time()
 
     with _active_repos_lock:
@@ -226,7 +232,7 @@ def _get_active_repos_state(repo_names):
             _active_repos_state["repos_key"] = key
             state = dict(_active_repos_state)
             threading.Thread(
-                target=_active_repos_worker, args=(repo_names,), daemon=True
+                target=_active_repos_worker, args=(repo_configs,), daemon=True
             ).start()
 
     return state
@@ -349,6 +355,25 @@ def _finalize_document(directory, filename):
     if not os.path.isfile(docx_path):
         raise FileNotFoundError(f"Document not found: {safe_name}")
     branding = _branding_for_finalize()
+    if os.path.abspath(directory) == os.path.abspath(get_invoices_dir()):
+        # Repair old invoices on export without rewriting the source DOCX.
+        with tempfile.TemporaryDirectory(prefix="invoice-layout-") as temp_dir:
+            prepared = os.path.join(temp_dir, safe_name)
+            document = normalize_invoice_layout(Document(docx_path))
+            # Keep the signature above the contact footer and reserve its height
+            # so longer invoices do not put body text underneath the images.
+            from src.core.document_finalizer import _image_width_height
+            branding["margin_bottom_in"] = max(1.0, branding.get("margin_bottom_in", 0.6))
+            heights = [0]
+            for kind, default_width in [("stamp", 1.3), ("signature", 1.6)]:
+                image_path = branding.get(kind + "_path")
+                if image_path and os.path.isfile(image_path):
+                    heights.append(_image_width_height(image_path, branding.get(kind + "_width_in", default_width) * 72)[1])
+            if max(heights):
+                from docx.shared import Inches
+                document.sections[0].bottom_margin = Inches(branding["margin_bottom_in"] + max(heights) / 72 + 0.2)
+            document.save(prepared)
+            return finalize_to_pdf(prepared, branding, output_dir=directory)
     return finalize_to_pdf(docx_path, branding)
 
 
@@ -536,11 +561,11 @@ def dashboard():
     mapped = db.get_repository_client_map()
     unmapped_repos = len([n for n in unique_repo_names if n not in mapped])
 
-    # Active repositories: any commit on any branch in the last 30 days.
+    # Active repositories: commits on configured branches in the last 30 days.
     # This never blocks the page load — it kicks off a background
     # computation (if needed) and the template polls /api/active-repos
     # for the result.
-    state = _get_active_repos_state(unique_repo_names)
+    state = _get_active_repos_state(repos)
 
     return render_template("dashboard.html",
                            total_clients=total_clients,
@@ -558,7 +583,7 @@ def api_active_repos():
     db = get_db()
     repos = db.get_repositories(enabled_only=False)
     unique_repo_names = sorted({r["repo"] for r in repos})
-    state = _get_active_repos_state(unique_repo_names)
+    state = _get_active_repos_state(repos)
     return jsonify({
         "status": state["status"],
         "count": state["count"],
@@ -737,8 +762,7 @@ def job_status_api(job_id):
 def repos_page():
     db = get_db()
     repos = db.get_repositories(enabled_only=False)
-    unique_repo_names = sorted({r["repo"] for r in repos})
-    state = _get_active_repos_state(unique_repo_names)
+    state = _get_active_repos_state(repos)
     active_set = set(state["active_repos"]) if state["status"] == "ready" else set()
     return render_template(
         "repos.html",
@@ -777,13 +801,33 @@ def add_repo():
 @app.route("/settings/repositories/update", methods=["POST"])
 @app.route("/repos/update", methods=["POST"])
 def update_repo():
-    repo_name = request.form.get("repo_name")
-    branch = request.form.get("branch")
+    original_repo_name = request.form.get("original_repo_name", "").strip()
+    original_branch = request.form.get("original_branch", "").strip()
+    repo_name = request.form.get("repo_name", "").strip()
+    branch = request.form.get("branch", "").strip()
     enabled = request.form.get("enabled") == "on"
     ai_enabled = request.form.get("ai_enabled") == "on"
 
+    if not original_repo_name or not original_branch or not repo_name or not branch:
+        flash("Repository name and branch are required.", "error")
+        return redirect(url_for("repos_page"))
+
     db = get_db()
-    db.update_repository(repo_name, branch, enabled=enabled, ai_enabled=ai_enabled)
+    updated = db.update_repository(
+        original_repo_name,
+        original_branch,
+        enabled=enabled,
+        ai_enabled=ai_enabled,
+        new_repo_name=repo_name,
+        new_branch=branch,
+    )
+    if not updated:
+        flash(
+            f"Could not update {original_repo_name} ({original_branch}). "
+            "The repository may already exist or its client mapping conflicts.",
+            "error",
+        )
+        return redirect(url_for("repos_page"))
     flash(f"Updated {repo_name} ({branch})", "success")
     return redirect(url_for("repos_page"))
 
@@ -935,6 +979,17 @@ def run_invoice_job(
             )
 
             if not all_commits:
+                failed_repo = next(
+                    (
+                        entry for entry in jobs[job_id]['log']
+                        if entry.startswith("✗ ")
+                    ),
+                    None,
+                )
+                if failed_repo:
+                    raise RuntimeError(
+                        f"Could not fetch commits: {failed_repo[2:]}"
+                    )
                 jobs[job_id]['status'] = 'done'
                 jobs[job_id]['progress'] = 'No commits found'
                 jobs[job_id]['result'] = {'total_commits': 0}
@@ -1930,12 +1985,24 @@ def legacy_clients_page():
     return redirect(url_for("clients_page"))
 
 
+def _client_per_hour_rate_from_form():
+    try:
+        rate = float(request.form.get("per_hour_rate", "").strip() or "0")
+    except ValueError:
+        return None
+    return rate if math.isfinite(rate) and rate >= 0 else None
+
+
 @app.route("/settings/clients/add", methods=["POST"])
 @app.route("/clients/add", methods=["POST"])
 def add_client():
     name = request.form.get("name", "").strip()
     if not name:
         flash("Client name is required.", "error")
+        return redirect(url_for("clients_page"))
+    per_hour_rate = _client_per_hour_rate_from_form()
+    if per_hour_rate is None:
+        flash("Per hour rate must be a valid non-negative number.", "error")
         return redirect(url_for("clients_page"))
     db = get_db()
     db.add_client(
@@ -1950,6 +2017,8 @@ def add_client():
         website=request.form.get("website", "").strip(),
         signatory_name=request.form.get("signatory_name", "").strip(),
         signatory_title=request.form.get("signatory_title", "").strip(),
+        po_number=request.form.get("po_number", "").strip(),
+        per_hour_rate=per_hour_rate,
     )
     flash(f"Added client: {name}", "success")
     return redirect(url_for("clients_page"))
@@ -1962,6 +2031,10 @@ def update_client():
     name = request.form.get("name", "").strip()
     if not name:
         flash("Client name is required.", "error")
+        return redirect(url_for("clients_page"))
+    per_hour_rate = _client_per_hour_rate_from_form()
+    if per_hour_rate is None:
+        flash("Per hour rate must be a valid non-negative number.", "error")
         return redirect(url_for("clients_page"))
     db = get_db()
     db.update_client(
@@ -1977,6 +2050,8 @@ def update_client():
         website=request.form.get("website", "").strip(),
         signatory_name=request.form.get("signatory_name", "").strip(),
         signatory_title=request.form.get("signatory_title", "").strip(),
+        po_number=request.form.get("po_number", "").strip(),
+        per_hour_rate=per_hour_rate,
     )
     flash(f"Updated client: {name}", "success")
     return redirect(url_for("clients_page"))
