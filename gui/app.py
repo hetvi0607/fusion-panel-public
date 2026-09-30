@@ -15,6 +15,8 @@ import threading
 import time
 import logging
 import math
+import tempfile
+from docx import Document
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import calendar
@@ -39,6 +41,7 @@ from src.core.github_client import GitHubClient
 from src.core.csv_reporter import CSVReporter
 from src.core.ai.csv_summarizer import AICsvSummarizer
 from src.core.invoice_generator import InvoiceGenerator
+from src.core.invoice_layout import normalize_invoice_layout
 from src.core.offer_letter_generator import OfferLetterGenerator
 from src.core.amc_ai_generator import AmcAiGenerator, PROMPT_VERSION, validate_amc_draft
 from src.core.amc_document_generator import AmcDocumentGenerator
@@ -352,6 +355,25 @@ def _finalize_document(directory, filename):
     if not os.path.isfile(docx_path):
         raise FileNotFoundError(f"Document not found: {safe_name}")
     branding = _branding_for_finalize()
+    if os.path.abspath(directory) == os.path.abspath(get_invoices_dir()):
+        # Repair old invoices on export without rewriting the source DOCX.
+        with tempfile.TemporaryDirectory(prefix="invoice-layout-") as temp_dir:
+            prepared = os.path.join(temp_dir, safe_name)
+            document = normalize_invoice_layout(Document(docx_path))
+            # Keep the signature above the contact footer and reserve its height
+            # so longer invoices do not put body text underneath the images.
+            from src.core.document_finalizer import _image_width_height
+            branding["margin_bottom_in"] = max(1.0, branding.get("margin_bottom_in", 0.6))
+            heights = [0]
+            for kind, default_width in [("stamp", 1.3), ("signature", 1.6)]:
+                image_path = branding.get(kind + "_path")
+                if image_path and os.path.isfile(image_path):
+                    heights.append(_image_width_height(image_path, branding.get(kind + "_width_in", default_width) * 72)[1])
+            if max(heights):
+                from docx.shared import Inches
+                document.sections[0].bottom_margin = Inches(branding["margin_bottom_in"] + max(heights) / 72 + 0.2)
+            document.save(prepared)
+            return finalize_to_pdf(prepared, branding, output_dir=directory)
     return finalize_to_pdf(docx_path, branding)
 
 
