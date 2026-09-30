@@ -22,12 +22,10 @@
         <thead class="bg-gray-50">
             <tr>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Company / Name</th>
-                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Address</th>
-                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">GSTIN</th>
-                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">PO Number</th>
-                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Per Hour Rate</th>
-                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact</th>
                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Repositories</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Contact Person</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Phone</th>
+                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Website</th>
                 <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
             </tr>
         </thead>
@@ -39,39 +37,6 @@
                         <i class="fa-solid fa-building text-gray-400 mr-3 text-base"></i>
                         <p class="text-sm font-semibold text-gray-900">{{ client.name }}</p>
                     </div>
-                </td>
-                <td class="px-6 py-4">
-                    <p class="text-sm text-gray-700">{{ client.address_line1 }}</p>
-                    {% if client.address_line2 %}
-                    <p class="text-xs text-gray-500">{{ client.address_line2 }}</p>
-                    {% endif %}
-                </td>
-                <td class="px-6 py-4">
-                    {% if client.gstin %}
-                    <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-mono text-gray-700">{{ client.gstin }}</span>
-                    {% else %}
-                    <span class="text-xs text-gray-400">—</span>
-                    {% endif %}
-                </td>
-                <td class="px-6 py-4">
-                    {% if client.po_number %}
-                    <span class="text-sm font-mono text-gray-700">{{ client.po_number }}</span>
-                    {% else %}
-                    <span class="text-xs text-gray-400">—</span>
-                    {% endif %}
-                </td>
-                <td class="px-6 py-4">
-                    {% if client.per_hour_rate %}
-                    <span class="text-sm font-mono text-gray-700">{{ client.per_hour_rate }}</span>
-                    {% else %}
-                    <span class="text-xs text-gray-400">—</span>
-                    {% endif %}
-                </td>
-                <td class="px-6 py-4">
-                    <p class="text-sm text-gray-700">{{ client.email or client.contact or '—' }}</p>
-                    {% if client.contact_person or client.phone %}
-                    <p class="text-xs text-gray-500">{{ client.contact_person }}{% if client.contact_person and client.phone %} · {% endif %}{{ client.phone }}</p>
-                    {% endif %}
                 </td>
                 <td class="px-6 py-4">
                     {% if client.repos %}
@@ -87,13 +52,20 @@
                     <span class="text-xs text-gray-400">None mapped</span>
                     {% endif %}
                 </td>
+                <td class="px-6 py-4 text-sm text-gray-700">{{ client.contact_person or '—' }}</td>
+                <td class="px-6 py-4 text-sm text-gray-700">{{ client.phone or '—' }}</td>
+                <td class="px-6 py-4 text-sm">
+                    {% if client.website %}
+                    <a href="{{ client.website }}" target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:text-indigo-800">{{ client.website }}</a>
+                    {% else %}<span class="text-gray-400">—</span>{% endif %}
+                </td>
                 <td class="px-6 py-4 text-right">
                     <div class="flex items-center justify-end space-x-2">
                         <button onclick='openReposModal({{ client.id }}, {{ client.name|tojson }}, {{ client.repos|tojson }})'
                                 class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                             <i class="fa-solid fa-code-branch text-[10px] mr-1"></i> Repos
                         </button>
-                        <button onclick='openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }}, {{ client.contact_person|tojson }}, {{ client.email|tojson }}, {{ client.phone|tojson }}, {{ client.website|tojson }}, {{ client.signatory_name|tojson }}, {{ client.signatory_title|tojson }}, {{ client.po_number|tojson }}, {{ client.per_hour_rate|tojson }})'
+                        <button onclick='openEditModal({{ client.id }}, {{ client.name|tojson }}, {{ client.address_line1|tojson }}, {{ client.address_line2|tojson }}, {{ client.gstin|tojson }}, {{ client.contact|tojson }}, {{ client.contact_person|tojson }}, {{ client.email|tojson }}, {{ client.phone|tojson }}, {{ client.website|tojson }}, {{ client.signatory_name|tojson }}, {{ client.signatory_title|tojson }}, {{ client.po_number|tojson }}, {{ client.per_hour_rate|tojson }}, {{ client.notes|tojson }}, {{ client.has_amc|tojson }}, {{ client.amc_start_date|tojson }}, {{ client.amc_end_date|tojson }}, {{ client.amc_amount|tojson }})'
                                 class="inline-flex items-center rounded-md bg-white border border-gray-300 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                             <i class="fa-solid fa-pen text-[10px] mr-1"></i> Edit
                         </button>
@@ -164,6 +136,32 @@
                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                 </div>
                 <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                    <textarea name="notes" rows="3" placeholder="Add internal notes about this client"
+                              class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border"></textarea>
+                </div>
+                <div class="rounded-lg border border-gray-200 p-3">
+                    <label class="flex items-center gap-2 text-sm font-medium text-gray-800">
+                        <input type="checkbox" name="has_amc" value="1" onchange="toggleClientAmcFields('add')"
+                               class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        Has AMC
+                    </label>
+                    <div id="add-amc-fields" style="display:none" class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">AMC Start Date</label>
+                            <input type="date" name="amc_start_date" id="add-amc-start-date" onchange="validateClientAmcDates('add')" class="block w-full rounded-lg border-gray-300 shadow-sm text-sm px-3 py-2 border">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">AMC End Date / Renewal</label>
+                            <input type="date" name="amc_end_date" id="add-amc-end-date" onchange="validateClientAmcDates('add')" class="block w-full rounded-lg border-gray-300 shadow-sm text-sm px-3 py-2 border">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">AMC Amount (₹)</label>
+                            <input type="number" name="amc_amount" min="0" step="0.01" class="block w-full rounded-lg border-gray-300 shadow-sm text-sm px-3 py-2 border">
+                        </div>
+                    </div>
+                </div>
+                <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Contact <span class="text-gray-400 font-normal">(optional)</span></label>
                     <input type="text" name="contact" placeholder="e.g. john@example.com or +1 234 567 8900"
                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
@@ -211,15 +209,16 @@
 <div id="edit-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
     <div class="flex min-h-full items-center justify-center p-4">
         <div class="fixed inset-0 bg-gray-500 bg-opacity-50 transition-opacity" onclick="document.getElementById('edit-modal').classList.add('hidden')"></div>
-        <div class="relative bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 z-10">
-            <div class="flex items-center justify-between mb-5">
+        <div class="relative bg-white rounded-xl shadow-xl max-w-5xl w-full max-h-[85vh] p-5 sm:p-6 z-10 flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between mb-4 flex-shrink-0">
                 <h3 class="text-lg font-semibold text-gray-900">Edit Client</h3>
                 <button onclick="document.getElementById('edit-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             </div>
-            <form method="POST" action="/settings/clients/update" class="space-y-3">
+            <form method="POST" action="/settings/clients/update" class="flex min-h-0 flex-1 flex-col">
                 <input type="hidden" name="client_id" id="edit-client-id">
+                <div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2 overflow-y-auto pr-1">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Company / Name <span class="text-red-500">*</span></label>
                     <input type="text" name="name" id="edit-name" required
@@ -250,12 +249,37 @@
                     <input type="number" name="per_hour_rate" id="edit-per-hour-rate" min="0" step="any"
                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                 </div>
+                <div class="md:col-span-2 lg:col-span-3">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                    <textarea name="notes" id="edit-notes" rows="2" placeholder="Add internal notes about this client"
+                              class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border"></textarea>
+                </div>
+                <div class="md:col-span-2 lg:col-span-3 rounded-lg border border-gray-200 p-3">
+                    <label class="flex items-center gap-2 text-sm font-medium text-gray-800">
+                        <input type="checkbox" name="has_amc" id="edit-has-amc" value="1" onchange="toggleClientAmcFields('edit')"
+                               class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        Has AMC
+                    </label>
+                    <div id="edit-amc-fields" style="display:none" class="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">AMC Start Date</label>
+                            <input type="date" name="amc_start_date" id="edit-amc-start-date" onchange="validateClientAmcDates('edit')" class="block w-full rounded-lg border-gray-300 shadow-sm text-sm px-3 py-2 border">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">AMC End Date / Renewal</label>
+                            <input type="date" name="amc_end_date" id="edit-amc-end-date" onchange="validateClientAmcDates('edit')" class="block w-full rounded-lg border-gray-300 shadow-sm text-sm px-3 py-2 border">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">AMC Amount (₹)</label>
+                            <input type="number" name="amc_amount" id="edit-amc-amount" min="0" step="0.01" class="block w-full rounded-lg border-gray-300 shadow-sm text-sm px-3 py-2 border">
+                        </div>
+                    </div>
+                </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Contact <span class="text-gray-400 font-normal">(optional)</span></label>
                     <input type="text" name="contact" id="edit-contact"
                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
                         <input type="text" name="contact_person" id="edit-contact-person" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
@@ -281,7 +305,7 @@
                         <input type="text" name="signatory_title" id="edit-signatory-title" class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm px-3 py-2 border">
                     </div>
                 </div>
-                <div class="flex justify-end space-x-3 pt-2">
+                <div class="flex justify-end space-x-3 pt-3 flex-shrink-0">
                     <button type="button" onclick="document.getElementById('edit-modal').classList.add('hidden')"
                             class="rounded-lg bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
                     <button type="submit"
@@ -386,7 +410,7 @@ function toggleAllRepos(checked) {
     });
 }
 
-function openEditModal(id, name, addr1, addr2, gstin, contact, contactPerson, email, phone, website, signatoryName, signatoryTitle, poNumber, perHourRate) {
+function openEditModal(id, name, addr1, addr2, gstin, contact, contactPerson, email, phone, website, signatoryName, signatoryTitle, poNumber, perHourRate, notes, hasAmc, amcStartDate, amcEndDate, amcAmount) {
     document.getElementById('edit-client-id').value = id;
     document.getElementById('edit-name').value = name;
     document.getElementById('edit-addr1').value = addr1;
@@ -401,7 +425,31 @@ function openEditModal(id, name, addr1, addr2, gstin, contact, contactPerson, em
     document.getElementById('edit-signatory-title').value = signatoryTitle;
     document.getElementById('edit-po-number').value = poNumber;
     document.getElementById('edit-per-hour-rate').value = perHourRate;
+    document.getElementById('edit-notes').value = notes || '';
+    document.getElementById('edit-has-amc').checked = Boolean(hasAmc);
+    document.getElementById('edit-amc-start-date').value = amcStartDate || '';
+    document.getElementById('edit-amc-end-date').value = amcEndDate || '';
+    document.getElementById('edit-amc-amount').value = amcAmount || '';
+    toggleClientAmcFields('edit');
     document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function toggleClientAmcFields(prefix) {
+    var form = document.querySelector('#' + prefix + '-modal form');
+    var enabled = form.querySelector('input[name="has_amc"]').checked;
+    var panel = document.getElementById(prefix + '-amc-fields');
+    panel.style.display = enabled ? 'grid' : 'none';
+    panel.querySelectorAll('input').forEach(function (input) {
+        input.required = enabled;
+    });
+    validateClientAmcDates(prefix);
+}
+
+function validateClientAmcDates(prefix) {
+    var start = document.getElementById(prefix + '-amc-start-date');
+    var end = document.getElementById(prefix + '-amc-end-date');
+    end.setCustomValidity(start.value && end.value && end.value < start.value
+        ? 'AMC end date must be on or after the start date.' : '');
 }
 </script>
 {% endblock %}

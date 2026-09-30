@@ -174,6 +174,11 @@ class RepositoryDB:
             "signatory_title": "TEXT DEFAULT ''",
             "po_number": "TEXT DEFAULT ''",
             "per_hour_rate": "REAL DEFAULT 0",
+            "notes": "TEXT DEFAULT ''",
+            "has_amc": "INTEGER DEFAULT 0",
+            "amc_start_date": "TEXT DEFAULT ''",
+            "amc_end_date": "TEXT DEFAULT ''",
+            "amc_amount": "REAL DEFAULT 0",
         })
 
         # Maps a repository to the client it belongs to. Keyed on repo_name
@@ -588,6 +593,11 @@ class RepositoryDB:
         signatory_title='',
         po_number='',
         per_hour_rate=0,
+        notes='',
+        has_amc=False,
+        amc_start_date='',
+        amc_end_date='',
+        amc_amount=0,
     ):
         conn = self._connect()
         cursor = conn.cursor()
@@ -595,13 +605,15 @@ class RepositoryDB:
             INSERT INTO clients (
                 name, address_line1, address_line2, gstin, contact,
                 contact_person, email, phone, website,
-                signatory_name, signatory_title, po_number, per_hour_rate
+                signatory_name, signatory_title, po_number, per_hour_rate, notes,
+                has_amc, amc_start_date, amc_end_date, amc_amount
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             name, address_line1, address_line2, gstin, contact,
             contact_person, email, phone, website,
-            signatory_name, signatory_title, po_number, per_hour_rate,
+            signatory_name, signatory_title, po_number, per_hour_rate, notes,
+            int(bool(has_amc)), amc_start_date, amc_end_date, amc_amount,
         ))
         conn.commit()
         client_id = cursor.lastrowid
@@ -624,6 +636,11 @@ class RepositoryDB:
         signatory_title='',
         po_number='',
         per_hour_rate=0,
+        notes='',
+        has_amc=False,
+        amc_start_date='',
+        amc_end_date='',
+        amc_amount=0,
     ):
         conn = self._connect()
         cursor = conn.cursor()
@@ -632,13 +649,15 @@ class RepositoryDB:
             SET name=?, address_line1=?, address_line2=?, gstin=?, contact=?,
                 contact_person=?, email=?, phone=?, website=?,
                 signatory_name=?, signatory_title=?, po_number=?,
-                per_hour_rate=?,
+                per_hour_rate=?, notes=?, has_amc=?, amc_start_date=?,
+                amc_end_date=?, amc_amount=?,
                 updated_at=CURRENT_TIMESTAMP
             WHERE id=?
         """, (
             name, address_line1, address_line2, gstin, contact,
             contact_person, email, phone, website,
-            signatory_name, signatory_title, po_number, per_hour_rate,
+            signatory_name, signatory_title, po_number, per_hour_rate, notes,
+            int(bool(has_amc)), amc_start_date, amc_end_date, amc_amount,
             client_id,
         ))
         conn.commit()

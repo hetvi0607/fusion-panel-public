@@ -18,7 +18,7 @@ import math
 import tempfile
 from docx import Document
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import date, datetime
 import calendar
 import requests as http_requests
 from dateutil.relativedelta import relativedelta
@@ -553,6 +553,25 @@ def dashboard():
     db = get_db()
     repos = db.get_repositories(enabled_only=False)
     clients = db.get_clients()
+    today = date.today()
+    amc_renewals = []
+    for client in clients:
+        if not client.get("has_amc") or not client.get("amc_end_date"):
+            continue
+        try:
+            start_date = date.fromisoformat(client["amc_start_date"])
+            end_date = date.fromisoformat(client["amc_end_date"])
+        except (TypeError, ValueError):
+            continue
+        amc_renewals.append({
+            "id": client["id"],
+            "name": client["name"],
+            "start_date": start_date,
+            "end_date": end_date,
+            "amount": client.get("amc_amount") or 0,
+            "days_left": (end_date - today).days,
+        })
+    amc_renewals.sort(key=lambda item: item["days_left"])
 
     # Unique repository names (a repo may have multiple tracked branches).
     unique_repo_names = sorted({r["repo"] for r in repos})
@@ -574,7 +593,8 @@ def dashboard():
                            active_repos_status=state["status"],
                            active_repos=state["count"] if state["status"] == "ready" else None,
                            active_repos_list=state["active_repos"] if state["status"] == "ready" else None,
-                           active_users=state["users"] if state["status"] == "ready" else None)
+                           active_users=state["users"] if state["status"] == "ready" else None,
+                           amc_renewals=amc_renewals)
 
 
 @app.route("/api/active-repos")
@@ -1993,6 +2013,27 @@ def _client_per_hour_rate_from_form():
     return rate if math.isfinite(rate) and rate >= 0 else None
 
 
+def _client_amc_from_form():
+    if request.form.get("has_amc") != "1":
+        return {"has_amc": False, "amc_start_date": "", "amc_end_date": "", "amc_amount": 0}
+    start_date = request.form.get("amc_start_date", "").strip()
+    end_date = request.form.get("amc_end_date", "").strip()
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date)
+        amount = float(request.form.get("amc_amount", "").strip())
+    except (TypeError, ValueError):
+        return None
+    if end < start or not math.isfinite(amount) or amount < 0:
+        return None
+    return {
+        "has_amc": True,
+        "amc_start_date": start.isoformat(),
+        "amc_end_date": end.isoformat(),
+        "amc_amount": amount,
+    }
+
+
 @app.route("/settings/clients/add", methods=["POST"])
 @app.route("/clients/add", methods=["POST"])
 def add_client():
@@ -2003,6 +2044,10 @@ def add_client():
     per_hour_rate = _client_per_hour_rate_from_form()
     if per_hour_rate is None:
         flash("Per hour rate must be a valid non-negative number.", "error")
+        return redirect(url_for("clients_page"))
+    amc = _client_amc_from_form()
+    if amc is None:
+        flash("For an AMC, enter a valid start date, end date, and non-negative amount.", "error")
         return redirect(url_for("clients_page"))
     db = get_db()
     db.add_client(
@@ -2019,6 +2064,8 @@ def add_client():
         signatory_title=request.form.get("signatory_title", "").strip(),
         po_number=request.form.get("po_number", "").strip(),
         per_hour_rate=per_hour_rate,
+        notes=request.form.get("notes", "").strip(),
+        **amc,
     )
     flash(f"Added client: {name}", "success")
     return redirect(url_for("clients_page"))
@@ -2036,6 +2083,10 @@ def update_client():
     if per_hour_rate is None:
         flash("Per hour rate must be a valid non-negative number.", "error")
         return redirect(url_for("clients_page"))
+    amc = _client_amc_from_form()
+    if amc is None:
+        flash("For an AMC, enter a valid start date, end date, and non-negative amount.", "error")
+        return redirect(url_for("clients_page"))
     db = get_db()
     db.update_client(
         client_id=int(client_id),
@@ -2052,6 +2103,8 @@ def update_client():
         signatory_title=request.form.get("signatory_title", "").strip(),
         po_number=request.form.get("po_number", "").strip(),
         per_hour_rate=per_hour_rate,
+        notes=request.form.get("notes", "").strip(),
+        **amc,
     )
     flash(f"Updated client: {name}", "success")
     return redirect(url_for("clients_page"))
