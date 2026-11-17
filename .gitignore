@@ -1,10 +1,11 @@
-# Python
+# Python and local development
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
 venv/
+.venv/
 env/
 ENV/
 build/
@@ -22,46 +23,56 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Environment variables
+# Local credentials; only the dummy example belongs in Git
 .env
+.env.*
+!.env.example
+.flask_secret_key
+.db_key
+credentials.json
+credentials-*.json
+token.json
+*.pem
+*.key
 
-# IDE
+# Runtime data, database sidecars, backups, generated documents and screenshots
+/data/
+/output/
+/backups/
+*.db
+*.db-*
+*.db.*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.sqlite.*
+*.sqlite3.*
+*.backup*
+*.bak
+*.log
+*.docx
+*.pdf
+/github_commits*.csv
+/logs/*
+!/logs/.gitkeep
+
+# Private operational records and original company branding
+/docs/MIGRATION_COMPLETE.md
+/docs/CLIENT_EMAIL_VERIFICATION.md
+/gui/static/logo.png
+
+# Editors and macOS
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
 .DS_Store
-
-# Logs
-logs/*.log
-logs/commit_tracker.log
-!logs/.gitkeep
-
-# Data directory
-data/repositories.db
-data/reports/*.csv
-!data/reports/.gitkeep
-data/amc_contracts/
-data/branding/
-data/invoices/*.docx
-data/invoices/*.pdf
-
-# Google credentials
-credentials.json
-token.json
-
-# macOS
-.DS_Store
 .AppleDouble
 .LSOverride
-
-# Thumbnails
 ._*
-data/reports/july-2026/all_commits.csv
-data/reports/july-2026/example-org-sample-android/jetpack-compose/commits.csv
-data/reports/june-2026/all_commits.csv
-data/reports/june-2026/rutvik106-Time-Tracker/rutvik-test/commits.csv
-data/offer_letters/offer_letter_devarsh_bhavsar_2026-06-03.docx
-data/reports/march-2026/rutvik106-Time-Tracker/main/commits.csv

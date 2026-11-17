@@ -102,7 +102,6 @@ task-sheet-automation/
 │   ├── PROJECT_README.md       # Detailed project documentation
 │   ├── WHATSAPP_SETUP.md       # WhatsApp setup guide
 │   ├── DATABASE_MIGRATION.md   # Database migration guide
-│   ├── MIGRATION_COMPLETE.md   # Migration completion notes
 │   └── REQUIREMENTS.md         # Original requirements document
 │
 ├── data/                        # Data storage
@@ -326,3 +325,26 @@ Contributions are welcome! Please:
 ---
 
 **Note**: This project was recently restructured for better organization. If you encounter any issues with imports or paths, please open an issue.
+
+## Keeping private data local
+
+Copy `.env.example` to `.env` and enter your own credentials. The repository
+contains dummy company/contact defaults. Configure your own details locally
+before generating or sending business documents. The original company logo
+is excluded; without a local `gui/static/logo.png`, documents use text branding.
+
+Runtime files under `data/`, reports, invoices, backups, keys, logs, and screenshots
+are ignored. Never force-add them. Keep backups outside the checkout.
+
+Before committing, stage the intended source files and run:
+
+```bash
+python3 scripts/check_publication.py
+gitleaks git --redact --log-opts=--all
+```
+
+The first command checks the Git index, so stage intended changes before running
+it. Use `python3 scripts/check_publication.py --all-history` to check historical
+file paths and recognizable credential formats too. These checks complement a
+manual review of business data. Deleting a secret in a new commit does not remove
+it from earlier commits. Revoke exposed credentials before publication.

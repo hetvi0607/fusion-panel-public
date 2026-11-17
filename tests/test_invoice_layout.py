@@ -1,4 +1,5 @@
 import os
+import base64
 import tempfile
 import unittest
 from io import BytesIO
@@ -11,13 +12,23 @@ from src.core.invoice_layout import normalize_invoice_layout
 
 
 class InvoiceLayoutTests(unittest.TestCase):
+    def setUp(self):
+        # A synthetic image keeps tests independent of private local branding.
+        self.logo_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.logo_dir.cleanup)
+        self.logo = os.path.join(self.logo_dir.name, 'logo.png')
+        with open(self.logo, 'wb') as image:
+            image.write(base64.b64decode(
+                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='
+            ))
+
     def _invoice(self, path, mode='fixed'):
         InvoiceGenerator(enable_ai=False).generate_invoice(
             work_details=[{'category': 'Annual maintenance', 'items': ['Support and updates'],
                            'amount': 12500, 'hours': 25}],
             bill_to={'name': 'Example Client'},
             invoice_meta={'invoice_no': 'INV-1'},
-            output_path=path, pricing_mode=mode, per_hour_rate=500,
+            output_path=path, pricing_mode=mode, per_hour_rate=500, logo_path=self.logo,
         )
         return Document(path)
 
